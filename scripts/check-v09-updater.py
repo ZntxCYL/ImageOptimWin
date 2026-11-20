@@ -36,6 +36,10 @@ check('build-linux.sh', ['check-v081-build.py', 'check-v09-updater.py',
     'svgo/node_modules/svgo/bin/svgo'])
 check('publish.ps1', ['ImageOptim.Updater.csproj', 'ImageOptim.Updater.exe',
     'ExcludeFromSingleFile', 'svgo\\bin\\svgo'])
+check('publish.ps1', ['ControlTemplate TargetType="{x:Type DataGridCell}"',
+    'running status icon must not use infinite rotation'])
+if 'RenderTransformOrigin="0.5,0.5"' in (root / 'publish.ps1').read_text(encoding='utf-8'):
+    errors.append('publish.ps1 retains the obsolete animated-icon guard')
 check('scripts/release-github.sh', ['gh release create', 'make-update-release.py', '--dry-run'])
 check('scripts/build-and-release.sh', ['build-linux.sh', 'release-github.sh'])
 check('scripts/make-update-release.py', ['openssl', 'dgst', '-sign', 'update-manifest.json',

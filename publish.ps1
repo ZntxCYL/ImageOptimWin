@@ -23,8 +23,14 @@ if (-not (Get-Content -LiteralPath $themePath -Raw).Contains('using System.IO;')
 $uiXaml = Get-Content -LiteralPath (Join-Path $root 'src\ImageOptim.Win\MainWindow.xaml') -Raw
 $uiCode = Get-Content -LiteralPath (Join-Path $root 'src\ImageOptim.Win\MainWindow.xaml.cs') -Raw
 $jobModel = Get-Content -LiteralPath (Join-Path $root 'src\ImageOptim.Win\Models\ImageJob.cs') -Raw
-foreach ($requiredText in @('Window_PreviewDrag', 'Window_PreviewDrop', 'JobPrimaryText', 'JobSecondaryText', 'RenderTransformOrigin="0.5,0.5"')) {
+foreach ($requiredText in @('Window_PreviewDrag', 'Window_PreviewDrop', 'JobPrimaryText', 'JobSecondaryText', 'ControlTemplate TargetType="{x:Type DataGridCell}"', 'StatusIconUri')) {
     if (-not $uiXaml.Contains($requiredText)) { throw "v0.8 MainWindow.xaml missing: $requiredText" }
+}
+if ($uiXaml.Contains('RotatingProgressIcon') -or $uiXaml.Contains('RepeatBehavior="Forever"')) {
+    throw 'v0.9.2: running status icon must not use infinite rotation.'
+}
+if (-not $uiXaml.Contains('<Setter Property="Background" Value="{DynamicResource ThemeSelected}"/>')) {
+    throw 'v0.9.2: selected DataGrid cell background must be explicit.'
 }
 if (-not $uiCode.Contains('existing.ResetForRetry();')) { throw 'v0.8 re-drop handling is missing.' }
 foreach ($status in @('wait','progress','ok','noopt','err')) {
