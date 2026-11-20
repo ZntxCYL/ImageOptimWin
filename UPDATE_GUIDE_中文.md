@@ -44,7 +44,7 @@ gh secret set IMAGEOPTIM_UPDATE_PRIVATE_KEY \
 
 **不会创建 GitHub Release，也不会改变用户当前的 latest 版本。** 签名步骤若报告缺少 `IMAGEOPTIM_UPDATE_PRIVATE_KEY`，说明 Secret 尚未设置。
 
-## 首次正式发布
+## 首次可下载测试版（v0.9.0）
 
 先下载 Actions 构建包，在真实 Windows 10/11 x64 上验证启动、拖拽压缩、状态图标、窗口和主题。更新器安装与回滚也必须另行验证；GitHub Runner 编译/CLI 冒烟测试不能证明图形界面或更新器所有场景正常。
 
@@ -57,7 +57,7 @@ git tag v0.9.0
 git push origin v0.9.0
 ```
 
-标签推送会启动 `Signed Windows release`，在构建、引擎冒烟、签名与重新验证均通过后，创建正式 Release，固定上传：
+标签推送会启动 `Signed Windows release`，在构建、引擎冒烟、签名与重新验证均通过后，创建 GitHub **预发布测试版（Pre-release）**，固定上传：
 
 ```text
 ImageOptimWin-win-x64-Bundled.zip
@@ -67,7 +67,7 @@ update-manifest.sig
 
 工作流使用 GitHub Actions 的临时 `GITHUB_TOKEN`（发布任务限定 `contents: write`），拒绝覆盖同名 Release，并要求标签已存在。无需额外 GitHub Personal Access Token，也无需 Debian。
 
-**重要：** 正式发布不应仅依据静态检查；本项目原版的 Windows 自动更新与回滚尚未完成实机测试。在验证前请勿推送正式版本标签。
+**重要：** v0.9.0 先以预发布测试版供 Windows 用户下载，**不会进入 `releases/latest`，也不能用来验证客户端自动发现正式更新**。待完成 Windows 启动、图片压缩和更新器回滚的实际验证后，再将该 Release 升级为正式版（可使用 `gh release edit v0.9.0 --repo ZntxCYL/ImageOptimWin --prerelease=false --latest`）。正式发布不应仅依据静态检查。
 
 ## 发布下一个自动更新版本
 

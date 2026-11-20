@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: release-bundle
           path: dist
@@ -119,11 +119,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: release-bundle
           path: dist
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: signed-release-manifest
           path: dist/release-assets
@@ -146,11 +146,17 @@ jobs:
             echo "Release already exists: $GITHUB_REF_NAME" >&2
             exit 1
           fi
+          release_flags=(--latest)
+          if [[ "$GITHUB_REF_NAME" == 'v0.9.0' ]]; then
+            # Initial binary has not had Windows GUI/update-rollback acceptance testing.
+            # Publish a downloadable GitHub pre-release, not the stable latest.
+            release_flags=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             dist/ImageOptimWin-win-x64-Bundled.zip \
             dist/release-assets/update-manifest.json \
             dist/release-assets/update-manifest.sig \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ImageOptimWin $GITHUB_REF_NAME" \
-            --notes "Windows x64 offline build with signed automatic-update manifest." \
-            --latest
+            --notes "Windows x64 offline build with signed update manifest. Initial test release: Windows GUI startup, install, and update/rollback behavior are not yet fully verified. Please test on a non-production machine and back up images." \
+            "${release_flags[@]}"

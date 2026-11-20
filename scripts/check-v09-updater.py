@@ -44,7 +44,7 @@ check('scripts/verify-update-release.py', ['openssl', 'sha256', 'update-config.j
 check('.github/workflows/release-windows.yml', [
     'workflow_dispatch:', 'tags:', 'IMAGEOPTIM_UPDATE_PRIVATE_KEY',
     'Verify downloaded release assets', 'contents: write', '--verify-tag',
-    'actions/upload-artifact@v6', 'actions/download-artifact@v6'])
+    'actions/upload-artifact@v6', 'actions/download-artifact@v7'])
 check('src/ImageOptim.Win/Services/ThemeManager.cs', ['using System.IO;'])
 check('src/ImageOptim.Win/Services/OptimizerService.cs', ['"bin", "svgo"'])
 # Accept future patch/minor releases without weakening compatibility checks.
