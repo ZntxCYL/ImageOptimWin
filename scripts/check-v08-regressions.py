@@ -69,6 +69,11 @@ try:
         errors.append('Centered spinner rotation missing')
     if 'Assets\\StatusIcons\\*.png' not in csproj:
         errors.append('Status icons are not embedded WPF Resources')
+    if '<Resource Include="Assets\\AppIcon.png" />' not in csproj:
+        errors.append('Transparent PNG is not embedded as a WPF Resource')
+    for window in ('MainWindow.xaml', 'PreferencesWindow.xaml', 'UpdateWindow.xaml'):
+        if 'Icon="pack://application:,,,/Assets/AppIcon.png"' not in (src / window).read_text(encoding='utf-8'):
+            errors.append(f'{window}: window icon must use transparent PNG')
     for icon in ('wait', 'progress', 'ok', 'noopt', 'err'):
         path = src / f'Assets/StatusIcons/{icon}-display@2x.png'
         if not path.exists():

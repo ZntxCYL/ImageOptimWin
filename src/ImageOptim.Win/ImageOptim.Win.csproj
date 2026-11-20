@@ -8,11 +8,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ImageOptim.Win</AssemblyName>
     <RootNamespace>ImageOptim.Win</RootNamespace>
-    <Version>0.9.0</Version>
-    <FileVersion>0.9.0.0</FileVersion>
+    <Version>0.9.1</Version>
+    <FileVersion>0.9.1.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
+    <Resource Include="Assets\AppIcon.png" />
     <Resource Include="Assets\StatusIcons\*.png" />
     <Content Include="update-config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Content Include="tools\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />

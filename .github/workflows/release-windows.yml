@@ -50,6 +50,9 @@ jobs:
       - name: Package full offline Windows release
         shell: pwsh
         run: ./publish.ps1 -Runtime win-x64
+      - name: Validate embedded Windows EXE icon transparency
+        shell: pwsh
+        run: ./scripts/check-windows-app-icon.ps1 -AppDirectory dist/win-x64
       - name: Smoke-test bundled compression engines
         shell: pwsh
         run: ./scripts/smoke-test.ps1 -AppDirectory dist/win-x64
@@ -147,7 +150,7 @@ jobs:
             exit 1
           fi
           release_flags=(--latest)
-          if [[ "$GITHUB_REF_NAME" == 'v0.9.0' ]]; then
+          if [[ "$GITHUB_REF_NAME" == v0.9.* ]]; then
             # Initial binary has not had Windows GUI/update-rollback acceptance testing.
             # Publish a downloadable GitHub pre-release, not the stable latest.
             release_flags=(--prerelease)

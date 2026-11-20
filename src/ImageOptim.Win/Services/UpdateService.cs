@@ -22,12 +22,13 @@ public sealed class UpdateService : IDisposable
     private readonly HttpClient _http = new(new HttpClientHandler { AllowAutoRedirect = true });
     private readonly UpdateConfiguration _configuration;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    public bool NoStableReleaseFound { get; private set; }
 
     private UpdateService(UpdateConfiguration config)
     {
         _configuration = config;
         _http.Timeout = TimeSpan.FromMinutes(30);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/0.9.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/0.9.1");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 
@@ -47,9 +48,21 @@ public sealed class UpdateService : IDisposable
     public async Task<AvailableUpdate?> CheckAsync(CancellationToken token = default)
     {
         string endpoint = $"https://api.github.com/repos/{_configuration.Repository}/releases/latest";
+        NoStableReleaseFound = false;
         using var response = await _http.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, token);
         if (response.StatusCode == HttpStatusCode.NotFound)
-            throw new InvalidOperationException("GitHub 仓库不存在、没有正式 Release，或属于私有仓库。");
+        {
+            // releases/latest excludes pre-releases. A 404 here does NOT mean
+            // the repository is missing; check the public repository separately.
+            using var repoResponse = await _http.GetAsync(
+                $"https://api.github.com/repos/{_configuration.Repository}",
+                HttpCompletionOption.ResponseHeadersRead, token);
+            if (repoResponse.StatusCode == HttpStatusCode.NotFound)
+                throw new InvalidOperationException("GitHub 更新仓库不存在，或无法公开访问。");
+            repoResponse.EnsureSuccessStatusCode();
+            NoStableReleaseFound = true;
+            return null;
+        }
         response.EnsureSuccessStatusCode();
         byte[] releaseData = await ReadLimitedAsync(response, 1024 * 1024, token);
         using var releaseJson = JsonDocument.Parse(releaseData);

@@ -2,6 +2,12 @@
 
 本文件合并原有各版本的 CHANGES／版本说明，历史功能描述不代表已通过 Windows 实机验证。
 
+## v0.9.1 — 更新提示及 Windows 图标兼容修复
+- GitHub 仓库存在但仅有预发布版时，不再误报仓库不存在；手动检查显示准确提示，自动检查保持安静。
+- WPF 窗口直接使用透明 PNG；EXE 使用重新制作的多尺寸 ICO，小图增加 Windows AND 透明遮罩。
+- Windows CI 新增对已发布 EXE 嵌入图标透明度的实际检查，避免只校验源码文件。
+- 本版仍作为预发布测试版，Windows 图形界面与更新器回滚需实机验收。
+
 ## v0.9.0 — GitHub Releases 自动更新
 - 新增 GitHub Releases 版本检查、下载进度、RSA-SHA256 签名清单与文件 SHA-256／大小校验。
 - 独立 `ImageOptim.Updater.exe` 负责关闭主程序、切换安装目录、重启及启动失败回滚。

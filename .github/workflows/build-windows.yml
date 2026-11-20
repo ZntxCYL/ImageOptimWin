@@ -19,6 +19,9 @@ jobs:
       - name: Bundle, build and publish offline-ready Windows package
         shell: pwsh
         run: ./publish.ps1 -Runtime win-x64
+      - name: Validate embedded Windows EXE icon transparency
+        shell: pwsh
+        run: ./scripts/check-windows-app-icon.ps1 -AppDirectory dist/win-x64
       - name: Smoke-test included Windows engines and SVGO
         shell: pwsh
         run: ./scripts/smoke-test.ps1 -AppDirectory dist/win-x64

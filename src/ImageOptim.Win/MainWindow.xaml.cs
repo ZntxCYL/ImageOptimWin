@@ -360,8 +360,11 @@ public partial class MainWindow : Window
             var update = await service.CheckAsync();
             if (update is null)
             {
-                if (!silent) MessageBox.Show(this, "当前已是最新正式版本。", "检查更新",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                if (!silent) MessageBox.Show(this,
+                    service.NoStableReleaseFound
+                        ? "当前仓库暂无可用的正式版更新。预发布测试版不会自动安装。"
+                        : "当前已是最新正式版本。",
+                    "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             if (_isRunning)
