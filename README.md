@@ -45,11 +45,13 @@ Debian **不是更新服务器**，也不是发布的必要常驻基础设施。
 
 v0.9 包含独立 `ImageOptim.Updater.exe`、清单签名验证、下载进度和启动失败回滚尝试。更新主 EXE 时需要关闭应用并重启，不支持运行时无缝替换 DLL。
 
-- `src/ImageOptim.Win/update-config.json` 初始为空：**未配置仓库/公钥时自动更新不可用**。
-- 正式发布前，用 `scripts/configure-updates.py` 写入公开仓库和 RSA **公钥**，重新构建。
-- RSA **私钥** 必须保存在源码仓库之外，并做好长期安全备份；不要提交 GitHub。
-- 发布需要经过 Windows 实机启动、压缩、更新与回滚测试；不能仅凭源码检查宣称功能已通过。
-- 详细操作：[更新与签名指南](UPDATE_GUIDE_中文.md)、[首次发布说明](GH_首次发布_中文.md)。
+- 更新仓库已配置为 **`ZntxCYL/ImageOptimWin`**，客户端可信 RSA 公钥位于 `src/ImageOptim.Win/update-config.json`。
+- **普通推送**：`Windows bundled build` 仅编译和上传 CI 测试包。
+- **手动执行** `Signed Windows release`：仅构建并验证签名，不创建 Release。
+- **推送版本标签** `v0.9.0` / `v0.9.1`：`Signed Windows release` 自动构建、验证、签名并发布正式 GitHub Release（版本必须与两个 `.csproj` 一致）。
+- 签名依赖仓库 Actions Secret `IMAGEOPTIM_UPDATE_PRIVATE_KEY`；**私钥只保存于源码目录外与 GitHub Secret，不能提交 Git**，并须长期备份。尚未完成 Secret 配置时签名阶段会明确失败。
+- 发布前仍须在 Windows 实机测试启动、压缩和更新回滚；CI 通过不等于更新器已完成全流程验证。
+- 详细操作：[更新、签名及首次发布指南](UPDATE_GUIDE_中文.md)。
 
 ## 开发验证
 
@@ -82,7 +84,6 @@ CHANGELOG.md              合并后的唯一版本更新记录
 
 - [CHANGELOG.md](CHANGELOG.md)：各版本修改记录
 - [UPDATE_GUIDE_中文.md](UPDATE_GUIDE_中文.md)：自动更新、签名和部署
-- [GH_首次发布_中文.md](GH_首次发布_中文.md)：首次发布检查清单
 - [THIRD_PARTY.md](THIRD_PARTY.md)：压缩引擎来源、许可证和再分发注意事项
 
 WPF 前端独立编写；压缩工具依各自许可证分发。用户提供的 ImageOptim 应用图标和状态图片可能另受素材版权约束，公开分发前应确认授权。软件不保证处理所有格式或保留所有元数据，发布与使用前请保留原始文件备份。

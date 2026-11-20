@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 from zipfile import ZipFile
+from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser()
@@ -29,6 +30,13 @@ if a.archive.name != 'ImageOptimWin-win-x64-Bundled.zip' or not a.archive.is_fil
     parser.error('Expected the bundled Windows ZIP from build-linux.sh')
 if not a.private_key.is_file():
     parser.error('Private signing key not found')
+# The signed version must identify the binaries compiled from this source tree.
+for project in ('src/ImageOptim.Win/ImageOptim.Win.csproj',
+                'src/ImageOptim.Updater/ImageOptim.Updater.csproj'):
+    document = ET.parse(ROOT / project).getroot()
+    compiled_version = next((e.text for e in document.iter() if e.tag == 'Version'), None)
+    if compiled_version != a.version:
+        parser.error(f'{project}: version {compiled_version!r} does not match {a.version!r}')
 
 # Prevent publishing a release with a different public trust anchor.
 config_path = ROOT / 'src/ImageOptim.Win/update-config.json'

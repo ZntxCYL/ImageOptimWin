@@ -1,93 +1,63 @@
-# ImageOptimWin v0.9 — GitHub Releases 自动更新指南
+# ImageOptimWin 自动更新与 GitHub Releases 发布指南
 
-> **Debian 只是临时构建机。** 更新托管在 GitHub Releases。先在长期可信机器备份 RSA 私钥，再在临时 Debian 上执行 `bash scripts/gh-bootstrap-release.sh --private-key /safe/temporary-copy.pem --prepare`；Windows 实测后用相同参数加 `--publish`。详见 `GH_首次发布_中文.md`。
+## 当前状态与架构
 
-## 一、更新机制
+**GitHub 仓库：** `ZntxCYL/ImageOptimWin`。Debian 不是服务器，也不参与日常发布。GitHub Actions 的 Windows Runner 构建可离线运行的 EXE 和压缩引擎，Ubuntu Runner 负责 RSA-SHA256 签名、校验，并在正式版标签推送时上传 GitHub Releases。
 
-- **更新源**：公开 GitHub 仓库的最新正式 Release。客户端读取 GitHub REST API `releases/latest`，不使用个人 Token。
-- **安全校验**：Release 必须附带 `update-manifest.json` 和 `update-manifest.sig`。客户端用打包时内置的 RSA 公钥验证清单签名，然后使用清单中的 SHA-256 和字节数验证更新 ZIP。签名、哈希或版本不符直接拒绝安装。
-- **更新体验**：启动时自动检查、标题栏“检查更新”手动检查、显示下载进度、安装时退出主程序、独立更新器替换版本目录、重新打开主窗口。
-- **回滚**：安装失败或新程序在 50 秒内没有报告窗口启动成功，更新器尝试恢复此前的安装目录并重新启动旧程序。成功更新后旧版本备份保留在安装目录同级，便于手动恢复。
-- **保留配置**：原有设置及压缩期间的用户文件不在安装目录中，保留 `%LOCALAPPDATA%\ImageOptimWin` 下的配置。建议更新前完成所有正在进行的压缩任务。
+- `Windows bundled build`：每次普通推送自动构建和运行压缩引擎冒烟测试；产物为 Actions Artifact，不是用户自动更新源。
+- `Signed Windows release`：手动运行只做构建、签名、复核，不创建 Release；推送合法的 `vMAJOR.MINOR.PATCH` 标签，且与两个 .csproj 版本一致时，自动发布正式 Release。
+- 客户端从 GitHub Releases 的 latest 正式版获取 `update-manifest.json`、`update-manifest.sig`、`ImageOptimWin-win-x64-Bundled.zip`，用内置公钥验证 RSA 签名，再对 ZIP 做 SHA-256 和大小校验。
+- 完成下载后，独立 `ImageOptim.Updater.exe` 在主程序退出后替换目录、启动新版；若启动健康检查失败会尝试回滚。**更新 EXE 必须重启应用，不是运行时热替换。**
 
-注意：这属于**自动下载 + 重启更新**，不是运行中的 EXE/DLL 原地热替换。安装位置必须允许当前 Windows 用户写入（推荐用户目录，避免 `C:\Program Files` 权限问题）。第一次从 v0.8.x 升级 v0.9 必须手工部署一次，因为旧版没有更新器。
+## 一次性的签名密钥与 Secret
 
-## 二、一次性设置 GitHub 更新源和签名密钥（长期设备保管私钥）
-
-前提：Debian 安装 `openssl`、`python3`；发布到公开 GitHub Releases。**下面的密钥生成步骤应在长期可信设备执行，不能只存在临时 Debian 上；详情见 `GH_首次发布_中文.md`。**
-
-```bash
-# 在源码目录外生成私钥；千万不要上传或放进 ZIP
-mkdir -p "$HOME/imageoptim-signing"
-chmod 700 "$HOME/imageoptim-signing"
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
-  -out "$HOME/imageoptim-signing/private.pem"
-chmod 600 "$HOME/imageoptim-signing/private.pem"
-openssl pkey -in "$HOME/imageoptim-signing/private.pem" -pubout \
-  -out "$HOME/imageoptim-signing/public.pem"
-
-cd ImageOptimWin
-python3 scripts/configure-updates.py \
-  --repo OWNER/ImageOptimWin \
-  --public-key "$HOME/imageoptim-signing/public.pem"
-```
-
-这个命令会将仓库名称和**公钥**写入 `src/ImageOptim.Win/update-config.json`。需要用配置完成后的源码重新构建，否则已构建 ZIP 仍然不包含更新配置。
-
-**不要在后续发布时随意生成新的密钥对。** 新版签名必须沿用现有私钥，否则已安装客户端会拒绝新版本。私钥需要离线备份，且**不要提交 GitHub、复制到任何构建产物或发送给他人**。签名操作应在可信的、保护良好的构建机器上进行。
-
-## 三、构建 Windows 完整包
-
-```bash
-python3 scripts/check-source-config.py
-python3 scripts/check-v08-regressions.py
-python3 scripts/check-v081-build.py
-python3 scripts/check-v09-updater.py
-bash build-linux.sh
-```
-
-输出：
+可信仓库及 RSA 公钥已经写进 `src/ImageOptim.Win/update-config.json`，可以公开提交。对应 RSA 3072 位私钥保存在**开发者自己长期持有的 Mac**（项目目录之外）：
 
 ```text
-dist/
-├── win-x64/
-│   ├── ImageOptim.Win.exe
-│   ├── ImageOptim.Updater.exe
-│   ├── update-config.json
-│   └── tools/...
-└── ImageOptimWin-win-x64-Bundled.zip
+~/.config/imageoptimwin/signing/private.pem
+~/.config/imageoptimwin/signing/public.pem
 ```
 
-注意：v0.9 源码 ZIP 本身**不包含下载好的 Windows 压缩引擎和可执行文件**；Debian 构建脚本会在构建时抓取并打包它们。程序运行时无需单独安装压缩引擎。此脚本需要联网并准备 .NET 10 SDK。
+**务必将 private.pem 离线加密备份。** GitHub Secrets 不支持取回密钥；如果本地文件丢失，旧版程序将无法验证由新密钥签名的更新，不要随意重新生成或覆盖。
 
-## 四、一键发布到 GitHub Releases
-
-先安装 GitHub CLI `gh` 并执行 `gh auth login`（或者配置有权限的 `GH_TOKEN`）。
-
-**预览并生成签名文件，不上传：**
+使用拥有此密钥的 Mac，执行一次：
 
 ```bash
-bash scripts/release-github.sh OWNER/ImageOptimWin 0.9.0 \
-  "$HOME/imageoptim-signing/private.pem" --dry-run
+gh secret set IMAGEOPTIM_UPDATE_PRIVATE_KEY \
+  --repo ZntxCYL/ImageOptimWin \
+  < ~/.config/imageoptimwin/signing/private.pem
 ```
 
-**一条命令完成 Debian 构建、签名和发布（推荐）：**
+这会把私钥经 GitHub CLI 写入**仓库 Actions Secret**，不用在终端输入或打印私钥。使用 `gh secret list -R ZntxCYL/ImageOptimWin` 确认 Secret 名称存在（不会显示值）。
+
+绝不要把私钥提交到 Git、复制到 `src/`、作为 Release 附件或发送到聊天；源代码和程序中仅包含公钥。
+
+## CI 签名流程的无发布测试
+
+在仓库 Actions 里选择 **Signed Windows release** → **Run workflow** → **main**。这一步会：
+
+1. 运行历史回归检查和 WPF/.NET 编译。
+2. 下载校验所有压缩引擎，生成包含 updater.exe 的 Windows x64 ZIP。
+3. 从 Actions Secret 临时加载私钥，制作 RSA-SHA256 签名清单。
+4. 用公钥、版本号、ZIP 大小与 SHA-256 验证签名、更新包和内置的仓库配置。
+5. 上传测试用 `release-bundle` 和 `signed-release-manifest` Artifacts。
+
+**不会创建 GitHub Release，也不会改变用户当前的 latest 版本。** 签名步骤若报告缺少 `IMAGEOPTIM_UPDATE_PRIVATE_KEY`，说明 Secret 尚未设置。
+
+## 首次正式发布
+
+先下载 Actions 构建包，在真实 Windows 10/11 x64 上验证启动、拖拽压缩、状态图标、窗口和主题。更新器安装与回滚也必须另行验证；GitHub Runner 编译/CLI 冒烟测试不能证明图形界面或更新器所有场景正常。
+
+确认 `main` 对应两个 .csproj 的版本均是 `0.9.0`，且公钥已正确打包后，在有 Git 推送权限的电脑执行：
 
 ```bash
-bash scripts/build-and-release.sh OWNER/ImageOptimWin 0.9.0 \
-  "$HOME/imageoptim-signing/private.pem"
+git checkout main
+git pull --ff-only
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
-如果想先仅生成发布素材、不上传，在上面的命令最后加上 `--dry-run`。
-
-**已构建 ZIP 的情况下，仅执行签名与发布：**
-
-```bash
-bash scripts/release-github.sh OWNER/ImageOptimWin 0.9.0 \
-  "$HOME/imageoptim-signing/private.pem"
-```
-
-上传的三个 Release 附件名称**必须固定**：
+标签推送会启动 `Signed Windows release`，在构建、引擎冒烟、签名与重新验证均通过后，创建正式 Release，固定上传：
 
 ```text
 ImageOptimWin-win-x64-Bundled.zip
@@ -95,23 +65,25 @@ update-manifest.json
 update-manifest.sig
 ```
 
-签名清单列出 `repository`、`version`、`tag`、`archive`、`sha256`、`size`。三个附件作为同一个正式 Release 发布。GitHub 的 `releases/latest` 会选择最新正式 Release（不包含 draft/prerelease），客户端据此检查新版本。
+工作流使用 GitHub Actions 的临时 `GITHUB_TOKEN`（发布任务限定 `contents: write`），拒绝覆盖同名 Release，并要求标签已存在。无需额外 GitHub Personal Access Token，也无需 Debian。
 
-下一次发布：增加 `src/ImageOptim.Win/ImageOptim.Win.csproj` 和 `src/ImageOptim.Updater/ImageOptim.Updater.csproj` 的版本号，构建新版 ZIP，然后使用 `... 0.9.1 ...` 发布。**不要修改旧 Release 的已签名附件**；脚本发现目标 tag 已存在会拒绝覆盖。
+**重要：** 正式发布不应仅依据静态检查；本项目原版的 Windows 自动更新与回滚尚未完成实机测试。在验证前请勿推送正式版本标签。
 
-## 五、Windows 使用方式
+## 发布下一个自动更新版本
 
-1. 将首次生成的 `ImageOptimWin-win-x64-Bundled.zip` 解压至例如 `%LOCALAPPDATA%\Programs\ImageOptimWin`，之后不要随意移动文件夹。
-2. 双击 `ImageOptim.Win.exe`。启动会自动检查更新，也可点击标题栏“检查更新”。
-3. 发现新版本后，点击“下载并安装”。下载完成且校验通过后，关闭当前窗口，独立更新器自动接管。
-4. 更新器验证 ZIP、解压到相邻临时目录、将原目录重命名为备份、安装新目录、启动程序。若窗口启动失败，会尝试回滚。
-5. 更新失败时查看 `%LOCALAPPDATA%\ImageOptimWin\updater.log` 和 `startup-error.log`。确保没有另一个 ImageOptimWin 实例占用旧目录。
+例如 0.9.1：
 
-## 六、限制 / 部署前验证
+1. 把 `src/ImageOptim.Win/ImageOptim.Win.csproj` 与 `src/ImageOptim.Updater/ImageOptim.Updater.csproj` 的 Version 和 FileVersion 升至 0.9.1。
+2. 继续沿用原有 RSA 公钥/私钥和同一个公开仓库，不允许自行轮换信任根。
+3. 提交、推送 main，先让 `Windows bundled build` 成功并做好 Windows 实机检查。
+4. 创建并推送 `v0.9.1` 标签。GitHub Actions 自动签名并发布。
+5. 已经安装带该公钥的旧版客户端可通过“检查更新”或启动时检查获取新正式版。
 
-- **未在 Windows 真正运行验证**：Debian 交叉编译、Win10/11 下载、安装、回滚、杀进程和病毒防护软件兼容性必须做真实验证。当前只有源码、脚本语法和离线签名流程检查。
-- GitHub API 和 Releases 需要网络访问，私有仓库及预发布版本暂不支持。
-- 推荐把 APP 部署在用户可写的便携目录。安装于 `Program Files`、被其他程序锁住、跨卷安装和复杂多用户场景均不保证自动切换成功；失败会记录日志。
-- 当前更新包是整个离线 ZIP，**不是差分补丁**，下载大小会包含所有压缩引擎。
-- 在新版本确认窗口启动前，更新器尝试自动回滚；确认后的功能故障仍需手工回滚。请先在测试仓库和测试机验证升级路径。
-- 如果你丢失签名私钥，旧客户端无法安全接受换了公钥的新版本，需要重新分发安装包。
+## 安全与限制
+
+- 客户端使用 RSA-SHA256 签名清单及 ZIP SHA-256；这是**应用内更新可信性验证**，不等于 Microsoft Authenticode 代码签名，不能保证消除 SmartScreen 提示。
+- 只检查**公开仓库正式 Release**，不读取未签名的 Actions Artifacts、草稿、预发布版本。
+- 更新安装位置必须可写，建议 Windows 用户自己的应用目录；`Program Files`、多实例、文件被锁住、跨磁盘和杀毒软件可能导致安装或回滚失败。
+- 当前使用整包更新而不是差分补丁；大约需要重新下载包含压缩引擎的 ZIP。
+- 自动回滚基于新程序窗口在约 50 秒内的健康信号；不能覆盖所有运行时缺陷。保留自己的源图片备份和安装包。
+- 如需临时 Debian 交叉编译，现有 `build-linux.sh` 仍可用；GitHub 托管更新不依赖 Debian。

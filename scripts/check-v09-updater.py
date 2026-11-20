@@ -40,6 +40,11 @@ check('scripts/release-github.sh', ['gh release create', 'make-update-release.py
 check('scripts/build-and-release.sh', ['build-linux.sh', 'release-github.sh'])
 check('scripts/make-update-release.py', ['openssl', 'dgst', '-sign', 'update-manifest.json',
     'update-manifest.sig', 'sha256', 'private-key'])
+check('scripts/verify-update-release.py', ['openssl', 'sha256', 'update-config.json', 'RSA-SHA256'])
+check('.github/workflows/release-windows.yml', [
+    'workflow_dispatch:', 'tags:', 'IMAGEOPTIM_UPDATE_PRIVATE_KEY',
+    'Verify downloaded release assets', 'contents: write', '--verify-tag',
+    'actions/upload-artifact@v6', 'actions/download-artifact@v6'])
 check('src/ImageOptim.Win/Services/ThemeManager.cs', ['using System.IO;'])
 check('src/ImageOptim.Win/Services/OptimizerService.cs', ['"bin", "svgo"'])
 # Accept future patch/minor releases without weakening compatibility checks.
@@ -63,6 +68,8 @@ except Exception as e:
 try:
     cfg = json.loads((root / 'src/ImageOptim.Win/update-config.json').read_text(encoding='utf-8'))
     if set(cfg) != {'repository', 'publicKeyPem'}: errors.append('Malformed update-config.json schema')
+    elif cfg['repository'] != 'ZntxCYL/ImageOptimWin' or not cfg['publicKeyPem'].startswith('-----BEGIN PUBLIC KEY-----'):
+        errors.append('Release update repository/public key is not configured')
 except Exception as e:
     errors.append('Invalid update-config.json: ' + str(e))
 for rel in ['src/ImageOptim.Win/ImageOptim.Win.csproj', 'src/ImageOptim.Updater/ImageOptim.Updater.csproj',

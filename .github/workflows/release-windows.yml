@@ -1,0 +1,156 @@
+name: Signed Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Only the tag-publish job is allowed to create a GitHub Release.
+permissions:
+  contents: read
+
+concurrency:
+  group: imageoptim-signed-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and smoke-test Windows package
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Validate release source and version
+        shell: pwsh
+        run: |
+          python scripts/check-source-config.py
+          python scripts/check-v08-regressions.py
+          python scripts/check-v081-build.py
+          python scripts/check-v09-updater.py
+          [xml]$app = Get-Content src/ImageOptim.Win/ImageOptim.Win.csproj
+          [xml]$updater = Get-Content src/ImageOptim.Updater/ImageOptim.Updater.csproj
+          $version = $app.Project.PropertyGroup.Version
+          if ($version -ne $updater.Project.PropertyGroup.Version) { throw 'App and updater versions differ.' }
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF_NAME -cne "v$version") {
+            throw "Release tag must match application version v$version."
+          }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF_NAME -ne 'main') {
+            throw 'Manual dry run is restricted to main.'
+          }
+          $config = Get-Content src/ImageOptim.Win/update-config.json -Raw | ConvertFrom-Json
+          if ($config.repository -cne $env:GITHUB_REPOSITORY -or $config.publicKeyPem -notmatch 'BEGIN PUBLIC KEY') {
+            throw 'Missing configured release repository or signing public key.'
+          }
+      - name: Compile application and updater
+        shell: pwsh
+        run: dotnet build ./ImageOptim.Win.sln -c Release --nologo
+      - name: Package full offline Windows release
+        shell: pwsh
+        run: ./publish.ps1 -Runtime win-x64
+      - name: Smoke-test bundled compression engines
+        shell: pwsh
+        run: ./scripts/smoke-test.ps1 -AppDirectory dist/win-x64
+      - name: Upload unsigned package for signing job
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-bundle
+          path: dist/ImageOptimWin-win-x64-Bundled.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  sign:
+    name: Verify and sign release manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-bundle
+          path: dist
+      - name: Generate and verify RSA-SHA256 signature
+        shell: bash
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.IMAGEOPTIM_UPDATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${UPDATE_PRIVATE_KEY:-}" ]]; then
+            echo 'Missing Actions secret: IMAGEOPTIM_UPDATE_PRIVATE_KEY' >&2
+            exit 1
+          fi
+          umask 077
+          key_file="$(mktemp)"
+          trap 'rm -f -- "$key_file"' EXIT
+          printf '%s\n' "$UPDATE_PRIVATE_KEY" > "$key_file"
+          version="$(python3 - <<'PY'
+          from xml.etree import ElementTree as ET
+          root = ET.parse('src/ImageOptim.Win/ImageOptim.Win.csproj').getroot()
+          print(next(e.text for e in root.iter() if e.tag == 'Version'))
+          PY
+          )"
+          if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag does not match application version v$version" >&2
+            exit 1
+          fi
+          python3 scripts/make-update-release.py \
+            --repo "$GITHUB_REPOSITORY" --version "$version" \
+            --private-key "$key_file" \
+            --archive dist/ImageOptimWin-win-x64-Bundled.zip \
+            --out dist/release-assets
+      - name: Upload verified signed manifest
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-release-manifest
+          path: |
+            dist/release-assets/update-manifest.json
+            dist/release-assets/update-manifest.sig
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable GitHub Release
+    needs: sign
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-bundle
+          path: dist
+      - uses: actions/download-artifact@v6
+        with:
+          name: signed-release-manifest
+          path: dist/release-assets
+      - name: Verify downloaded release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-update-release.py \
+            --repo "$GITHUB_REPOSITORY" --version "${GITHUB_REF_NAME#v}" \
+            --archive dist/ImageOptimWin-win-x64-Bundled.zip \
+            --manifest dist/release-assets/update-manifest.json \
+            --signature dist/release-assets/update-manifest.sig
+      - name: Publish tagged release (never overwrite)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            dist/ImageOptimWin-win-x64-Bundled.zip \
+            dist/release-assets/update-manifest.json \
+            dist/release-assets/update-manifest.sig \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "ImageOptimWin $GITHUB_REF_NAME" \
+            --notes "Windows x64 offline build with signed automatic-update manifest." \
+            --latest

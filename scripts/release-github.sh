@@ -24,6 +24,6 @@ gh release create "$TAG" \
   "$ROOT/dist/ImageOptimWin-win-x64-Bundled.zip" \
   "$ROOT/dist/release-assets/update-manifest.json" \
   "$ROOT/dist/release-assets/update-manifest.sig" \
-  --repo "$REPO" --title "ImageOptimWin $TAG" \
+  --repo "$REPO" --verify-tag --title "ImageOptimWin $TAG" \
   --notes "ImageOptimWin $TAG Windows x64 offline release (signed update manifest)." --latest
 printf 'Published: https://github.com/%s/releases/tag/%s\n' "$REPO" "$TAG"
