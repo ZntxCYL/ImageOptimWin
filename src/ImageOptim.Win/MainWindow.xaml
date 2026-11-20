@@ -107,8 +107,21 @@
                             <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="VerticalContentAlignment" Value="Center"/>
                             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            <!-- Replace system selection visuals: they can paint a light cell
+                                 while forcing white foreground text on some Windows themes. -->
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type DataGridCell}">
+                                        <Border Background="{TemplateBinding Background}" BorderThickness="0">
+                                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource ThemeSelected}"/>
                                     <Setter Property="Foreground" Value="{DynamicResource ThemeSelectedText}"/>
                                 </Trigger>
                             </Style.Triggers>
@@ -137,38 +150,14 @@
                         <DataGridTemplateColumn Width="38" CanUserSort="False">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <!-- Keep an original 32px icon inside a transparent 40px canvas.
-                                         Visible artwork stays 16 DIPs; the extra margin allows
-                                         the progress spinner to rotate without clipping corners. -->
+                                    <!-- Padded 40px bitmap displays a complete 16-DIP status icon.
+                                         Running is a static gray progress icon; actual progress is
+                                         shown by the text and progress bar, without forced rotation. -->
                                     <Grid Width="30" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Image Source="{Binding StatusIconUri}" Width="20" Height="20"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
-                                               RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
-                                            <Image.RenderTransform>
-                                                <RotateTransform Angle="0"/>
-                                            </Image.RenderTransform>
-                                            <Image.Style>
-                                                <Style TargetType="Image">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding State}" Value="{x:Static models:JobState.Running}">
-                                                            <DataTrigger.EnterActions>
-                                                                <BeginStoryboard x:Name="RotatingProgressIcon">
-                                                                    <Storyboard>
-                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                         From="0" To="360" Duration="0:0:1.0"
-                                                                                         RepeatBehavior="Forever"/>
-                                                                    </Storyboard>
-                                                                </BeginStoryboard>
-                                                            </DataTrigger.EnterActions>
-                                                            <DataTrigger.ExitActions>
-                                                                <StopStoryboard BeginStoryboardName="RotatingProgressIcon"/>
-                                                            </DataTrigger.ExitActions>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Image.Style>
-                                        </Image>
+                                               IsHitTestVisible="False"/>
                                     </Grid>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>

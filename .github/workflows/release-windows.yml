@@ -149,17 +149,13 @@ jobs:
             echo "Release already exists: $GITHUB_REF_NAME" >&2
             exit 1
           fi
-          release_flags=(--latest)
-          if [[ "$GITHUB_REF_NAME" == v0.9.* ]]; then
-            # Initial binary has not had Windows GUI/update-rollback acceptance testing.
-            # Publish a downloadable GitHub pre-release, not the stable latest.
-            release_flags=(--prerelease)
-          fi
+          # Regular version tags publish a stable Release so installed clients can
+          # discover it through GitHub's releases/latest endpoint.
           gh release create "$GITHUB_REF_NAME" \
             dist/ImageOptimWin-win-x64-Bundled.zip \
             dist/release-assets/update-manifest.json \
             dist/release-assets/update-manifest.sig \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ImageOptimWin $GITHUB_REF_NAME" \
-            --notes "Windows x64 offline build with signed update manifest. Initial test release: Windows GUI startup, install, and update/rollback behavior are not yet fully verified. Please test on a non-production machine and back up images." \
-            "${release_flags[@]}"
+            --notes "ImageOptimWin Windows x64 offline release with RSA-signed update manifest. The UI selection and progress icon presentation have been improved. Update installation and rollback have not been fully validated across all Windows setups; back up original images." \
+            --latest

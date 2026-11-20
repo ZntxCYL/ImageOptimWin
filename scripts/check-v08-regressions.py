@@ -65,8 +65,17 @@ try:
         errors.append('Previously imported paths are not requeued')
     if xaml.count('JobPrimaryText') < 4 or 'JobSecondaryText' not in xaml:
         errors.append('Selection-aware text styles missing')
-    if 'RenderTransformOrigin="0.5,0.5"' not in xaml:
-        errors.append('Centered spinner rotation missing')
+    if 'RotatingProgressIcon' in xaml or 'RepeatBehavior="Forever"' in xaml:
+        errors.append('Progress status icon should not rotate')
+    if 'StatusIconUri' not in xaml or 'progress-display@2x.png' not in model:
+        errors.append('Static running state artwork missing')
+    if 'ControlTemplate TargetType="{x:Type DataGridCell}"' not in xaml or \
+            '<Setter Property="Background" Value="{DynamicResource ThemeSelected}"/>' not in xaml:
+        errors.append('Selection background does not override system DataGrid visuals')
+    theme = (src / 'Services/ThemeManager.cs').read_text(encoding='utf-8')
+    if '["ThemeSelected"] = "#DCEAFE"' not in theme or \
+            '["ThemeSelectedText"] = "#24252A"' not in theme:
+        errors.append('Light selection must use dark text on a pale background')
     if 'Assets\\StatusIcons\\*.png' not in csproj:
         errors.append('Status icons are not embedded WPF Resources')
     if '<Resource Include="Assets\\AppIcon.png" />' not in csproj:

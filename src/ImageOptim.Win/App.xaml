@@ -13,8 +13,8 @@
         <SolidColorBrush x:Key="ThemeSecondaryText" Color="#676970"/>
         <SolidColorBrush x:Key="ThemeMutedText" Color="#96989D"/>
         <SolidColorBrush x:Key="ThemeStripe" Color="#F6F6F7"/>
-        <SolidColorBrush x:Key="ThemeSelected" Color="#1463CF"/>
-        <SolidColorBrush x:Key="ThemeSelectedText" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="ThemeSelected" Color="#DCEAFE"/>
+        <SolidColorBrush x:Key="ThemeSelectedText" Color="#24252A"/>
         <SolidColorBrush x:Key="ThemeButton" Color="#F8F8F9"/>
         <SolidColorBrush x:Key="ThemeButtonHover" Color="#E8E9EC"/>
         <SolidColorBrush x:Key="ThemeProgressTrack" Color="#DADDE1"/>
