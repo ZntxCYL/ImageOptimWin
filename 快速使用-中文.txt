@@ -1,0 +1,29 @@
+ImageOptimWin — Windows ImageOptim 风格图片压缩工具（非官方）
+
+【普通用户】
+使用发布包 ImageOptimWin-win-x64-Bundled.zip：
+1. 解压到任意目录。
+2. 双击 ImageOptim.Win.exe。
+3. 拖入 PNG/JPG/JPEG/GIF/SVG 或图片文件夹即可。
+
+发布包自带 OxiPNG、JPEGOptim、MozJPEG/Jpegtran、Gifsicle、pngquant
+和 SVGO（连 Node.js 运行时也内置），运行时无需下载/安装压缩引擎。
+默认无损压缩；可在 Preferences 中打开有损压缩。
+默认会在发现更小版本时覆盖原图，建议先拿测试图片试用。
+
+【开发者】
+Windows x64，预装 .NET 10 SDK；可双击「一键构建完整Windows包.cmd」，
+或者打开 PowerShell 执行：
+  .\publish.ps1 -Runtime win-x64
+
+该命令会在“构建时”自动下载并校验引擎，最后创建：
+  dist\ImageOptimWin-win-x64-Bundled.zip
+
+你也可以把源码推送到 GitHub，使用自带的 Windows CI 工作流生成发布包。
+
+【注意】
+这是未在 Windows 实机上运行验证的工程代码/自动打包方案，
+不是官方 ImageOptim 产品，也不是保证压缩输出完全相同的逐像素复刻。
+源代码包不包含实际 Windows EXE；只有运行完上述打包命令后，
+生成的 Bundled.zip 才含所有必要的本项目引擎。
+开源许可证和三方组件见 THIRD_PARTY.md。

@@ -1,0 +1,251 @@
+<Window x:Class="ImageOptim.Win.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:models="clr-namespace:ImageOptim.Win.Models"
+        Icon="pack://application:,,,/Assets/AppIcon.ico"
+        Title="ImageOptim" Width="680" Height="450" MinWidth="550" MinHeight="320"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
+        FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="12"
+        Foreground="{DynamicResource ThemeText}" Background="{DynamicResource ThemeWindow}"
+        AllowDrop="True" Loaded="Window_Loaded" Closing="Window_Closing"
+        PreviewDragEnter="Window_PreviewDrag" PreviewDragOver="Window_PreviewDrag"
+        PreviewDrop="Window_PreviewDrop">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0"
+                            CornerRadius="6" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <!-- Explicit selection-aware brushes for templates: inherited DataGrid text
+             foreground was not reliable across Windows themes and DPI configurations. -->
+        <Style x:Key="JobPrimaryText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource ThemeSelectedText}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="JobSecondaryText" TargetType="TextBlock" BasedOn="{StaticResource JobPrimaryText}">
+            <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryText}"/>
+            <Setter Property="Opacity" Value="0.78"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource ThemeSelectedText}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="JobProgressStyle" TargetType="ProgressBar">
+            <Setter Property="Background" Value="{DynamicResource ThemeProgressTrack}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeProgressFill}"/>
+            <Setter Property="Height" Value="3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}"
+                                CornerRadius="2" ClipToBounds="True">
+                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}"
+                                    HorizontalAlignment="Left" CornerRadius="2"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Border BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1"
+            Background="{DynamicResource ThemeWindow}" CornerRadius="6" ClipToBounds="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="29"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="39"/>
+            </Grid.RowDefinitions>
+            <!-- macOS-inspired window chrome, implemented with Windows WPF. -->
+            <Border Grid.Row="0" Background="{DynamicResource ThemeTitleBar}"
+                    BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <Button Style="{StaticResource MacCircle}" Background="#FF605C" Click="Close_Click" ToolTip="关闭"/>
+                        <Button Style="{StaticResource MacCircle}" Background="#FFBD44" Click="Minimize_Click" ToolTip="最小化"/>
+                        <Button Style="{StaticResource MacCircle}" Background="#00CA4E" Click="Maximize_Click" ToolTip="最大化"/>
+                    </StackPanel>
+                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Text="ImageOptim" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource ThemeSecondaryText}" IsHitTestVisible="False"/>
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Margin="0,0,8,0">
+                        <Button Style="{StaticResource FooterButton}" Padding="5,1" Background="Transparent"
+                                BorderThickness="0" FontSize="11" Content="检查更新" Click="CheckUpdates_Click" ToolTip="检查 GitHub Releases 更新"/>
+                        <Button Style="{StaticResource FooterButton}" Padding="6,1" Background="Transparent"
+                                BorderThickness="0" FontSize="16" Content="⚙" Click="Preferences_Click" ToolTip="偏好设置"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Grid Grid.Row="1">
+                <DataGrid x:Name="JobsGrid" AutoGenerateColumns="False" CanUserAddRows="False"
+                          CanUserDeleteRows="False" CanUserResizeRows="False" CanUserReorderColumns="False"
+                          GridLinesVisibility="None" HeadersVisibility="Column" BorderThickness="0"
+                          RowHeaderWidth="0" RowHeight="43" ColumnHeaderHeight="26"
+                          Background="{DynamicResource ThemeWindow}" BorderBrush="Transparent"
+                          RowBackground="{DynamicResource ThemeWindow}"
+                          AlternationCount="2" AlternatingRowBackground="{DynamicResource ThemeStripe}"
+                          SelectionMode="Extended" SelectionUnit="FullRow"
+                          FontSize="12" Foreground="{DynamicResource ThemeText}" IsReadOnly="True"
+                          MouseDoubleClick="JobsGrid_MouseDoubleClick">
+                    <DataGrid.Resources>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="{DynamicResource ThemeHeader}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
+                            <Setter Property="FontSize" Value="12"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        </Style>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource ThemeSelectedText}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="ToolTip" Value="{Binding StatusTooltip}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource ThemeSelected}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource ThemeSelectedText}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.Resources>
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="在资源管理器中显示" Click="ShowInExplorer_Click"/>
+                            <MenuItem Header="重新优化所选图片" Click="OptimizeSelected_Click"/>
+                            <MenuItem Header="恢复原图（限本次运行）" Click="Revert_Click"/>
+                            <Separator/>
+                            <MenuItem Header="从列表移除" Click="Remove_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="38" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <!-- Keep an original 32px icon inside a transparent 40px canvas.
+                                         Visible artwork stays 16 DIPs; the extra margin allows
+                                         the progress spinner to rotate without clipping corners. -->
+                                    <Grid Width="30" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Image Source="{Binding StatusIconUri}" Width="20" Height="20"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                                               RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                                            <Image.RenderTransform>
+                                                <RotateTransform Angle="0"/>
+                                            </Image.RenderTransform>
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding State}" Value="{x:Static models:JobState.Running}">
+                                                            <DataTrigger.EnterActions>
+                                                                <BeginStoryboard x:Name="RotatingProgressIcon">
+                                                                    <Storyboard>
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0" To="360" Duration="0:0:1.0"
+                                                                                         RepeatBehavior="Forever"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </DataTrigger.EnterActions>
+                                                            <DataTrigger.ExitActions>
+                                                                <StopStoryboard BeginStoryboardName="RotatingProgressIcon"/>
+                                                            </DataTrigger.ExitActions>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="文件" Width="*" SortMemberPath="FileName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="4,2,5,2" VerticalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Style="{StaticResource JobPrimaryText}" Text="{Binding FileName}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
+                                        <Grid Grid.Row="1" Margin="0,2,0,0" Height="15">
+                                            <TextBlock Style="{StaticResource JobSecondaryText}" Text="{Binding StatusDisplay}" FontSize="10"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <ProgressBar Style="{StaticResource JobProgressStyle}"
+                                                         VerticalAlignment="Bottom" Margin="0,0,0,0"
+                                                         Minimum="0" Maximum="100"
+                                                         Value="{Binding ProgressPercent}"
+                                                         Visibility="{Binding ProgressVisibility}"/>
+                                        </Grid>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="大小" Width="126" SortMemberPath="CurrentSize">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Style="{StaticResource JobPrimaryText}" Text="{Binding SizeDisplay}"
+                                               TextAlignment="Right" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="已节省" Width="90" SortMemberPath="SavingsPercent">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Style="{StaticResource JobPrimaryText}" Text="{Binding SavingsDisplay}"
+                                               TextAlignment="Right" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <StackPanel x:Name="EmptyHint" IsHitTestVisible="False" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Orientation="Vertical">
+                    <TextBlock Text="↓" FontSize="50" Foreground="{DynamicResource ThemeMutedText}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="拖放图像文件到此处" FontSize="15" Foreground="{DynamicResource ThemeSecondaryText}"
+                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    <TextBlock Text="PNG · JPEG · GIF · SVG" FontSize="11" Foreground="{DynamicResource ThemeMutedText}"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Grid>
+            <Border Grid.Row="2" BorderBrush="{DynamicResource ThemeBorder}"
+                    BorderThickness="0,1,0,0" Background="{DynamicResource ThemeFooter}">
+                <Grid Margin="9,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Width="27" Height="26" Style="{StaticResource FooterButton}"
+                            FontSize="18" Padding="0" Content="+" Click="AddFiles_Click" ToolTip="添加图片"/>
+                    <TextBlock x:Name="SummaryText" Grid.Column="1" Margin="11,0" VerticalAlignment="Center"
+                               Text="拖放图像文件到上方区域" Foreground="{DynamicResource ThemeSecondaryText}" FontSize="11"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="StopButton" Width="27" Height="26" Margin="0,0,6,0"
+                                Style="{StaticResource FooterButton}" Padding="0" Content="■"
+                                Click="Stop_Click" ToolTip="停止压缩" IsEnabled="False"/>
+                        <Button x:Name="AgainButton" Width="84" Height="26"
+                                Style="{StaticResource FooterButton}" Padding="8,4"
+                                Click="Again_Click" Content="↻  再优化" ToolTip="重新优化"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

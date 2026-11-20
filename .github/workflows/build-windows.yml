@@ -1,0 +1,27 @@
+name: Windows bundled build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Bundle, build and publish offline-ready Windows package
+        shell: pwsh
+        run: ./publish.ps1 -Runtime win-x64
+      - name: Smoke-test included Windows engines and SVGO
+        shell: pwsh
+        run: ./scripts/smoke-test.ps1 -AppDirectory dist/win-x64
+      - name: Upload bundled ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageOptimWin-win-x64-Bundled
+          path: dist/ImageOptimWin-win-x64-Bundled.zip
+          if-no-files-found: error
