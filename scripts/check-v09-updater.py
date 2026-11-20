@@ -26,7 +26,23 @@ check('src/ImageOptim.Win/MainWindow.xaml.cs', ['CheckUpdatesAsync', 'ConfirmHea
 check('src/ImageOptim.Win/Services/UpdateService.cs', [
     'RSA.Create()', 'VerifyData(manifestBytes, signatureBytes', 'HashAlgorithmName.SHA256',
     'CryptographicException', 'IncrementalHash', 'StartUpdater', 'ConfirmHealthyStartup',
-    'https://api.github.com/repos/', 'releases/latest', 'ImageOptim.Updater.exe'])
+    'https://github.com/', 'releases/latest', 'ImageOptim.Updater.exe'])
+check('src/ImageOptim.Win/Services/UpdateService.cs', [
+    'EnsureGitHubResponseOk', 'Uri.UriSchemeHttps', 'HashAlgorithmName.SHA256',
+    'response.RequestMessage?.RequestUri', 'releases/download/{tag}/'])
+if 'api.github.com/repos/' in (root / 'src/ImageOptim.Win/Services/UpdateService.cs').read_text(encoding='utf-8'):
+    errors.append('Latest release lookup must not use unauthenticated GitHub REST API')
+check('src/ImageOptim.Win/MainWindow.xaml', [
+    'HeaderStyle="{StaticResource RightAlignedColumnHeader}"',
+    'x:Name="AgainButton"', 'x:Name="StopButton"', 'x:Name="ClearRecordsButton"'])
+check('src/ImageOptim.Win/MainWindow.xaml.cs', [
+    'AgainButton.Visibility = settled ? Visibility.Visible : Visibility.Collapsed',
+    'StopButton.Visibility = _isRunning ? Visibility.Visible : Visibility.Collapsed'])
+check('src/ImageOptim.Win/PreferencesWindow.xaml', [
+    '<TabItem Header="关于">', 'x:Name="VersionText"'])
+check('src/ImageOptim.Win/PreferencesWindow.xaml.cs', [
+    'typeof(PreferencesWindow).Assembly.GetName().Version',
+    'VersionText.Text = "当前版本：v"'])
 check('src/ImageOptim.Win/UpdateWindow.xaml.cs', ['DownloadAsync', 'StartUpdater', 'Cancel_Click'])
 check('src/ImageOptim.Updater/Program.cs', ['WaitForExitAsync', 'Directory.Move(install, backup)',
     'Directory.Move(stage, install)', 'Directory.Move(backup, install)', 'health-',

@@ -12,6 +12,9 @@ public partial class PreferencesWindow : Window
     {
         Settings = settings;
         InitializeComponent();
+        // Read the compiled assembly version rather than a manually maintained label.
+        var version = typeof(PreferencesWindow).Assembly.GetName().Version;
+        VersionText.Text = "当前版本：v" + (version?.ToString(3) ?? "未知");
         DataContext = Settings;
     }
 

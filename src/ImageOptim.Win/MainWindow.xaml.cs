@@ -255,10 +255,14 @@ public partial class MainWindow : Window
 
     private void UpdateSummary()
     {
-        // Only show clear history after all jobs have settled.
-        ClearRecordsButton.Visibility = !_isRunning && _jobs.Count > 0 &&
-            _jobs.All(job => job.State is not (JobState.Queued or JobState.Running))
-            ? Visibility.Visible : Visibility.Collapsed;
+        // Keep footer actions contextual. Empty queues need no controls;
+        // processing shows only Stop; completed/failed/cancelled records show
+        // Clear and Retry. Never expose destructive history operations mid-run.
+        bool settled = !_isRunning && _jobs.Count > 0 &&
+            _jobs.All(job => job.State is not (JobState.Queued or JobState.Running));
+        ClearRecordsButton.Visibility = settled ? Visibility.Visible : Visibility.Collapsed;
+        AgainButton.Visibility = settled ? Visibility.Visible : Visibility.Collapsed;
+        StopButton.Visibility = _isRunning ? Visibility.Visible : Visibility.Collapsed;
         if (_jobs.Count == 0)
         {
             SummaryText.Text = "拖放图像文件到上方区域";
@@ -390,6 +394,12 @@ public partial class MainWindow : Window
             }
             var prompt = new UpdateWindow(service, update) { Owner = this };
             if (prompt.ShowDialog() == true) Close();
+        }
+        catch (OperationCanceledException)
+        {
+            if (!silent) MessageBox.Show(this,
+                "检查更新超时。请检查网络或 VPN 连接，稍后重试。",
+                "检查更新", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {

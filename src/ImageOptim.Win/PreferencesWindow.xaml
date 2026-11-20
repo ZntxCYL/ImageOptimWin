@@ -164,6 +164,20 @@
                     </Grid>
                 </StackPanel>
             </TabItem>
+            <TabItem Header="关于">
+                <StackPanel Margin="29,29,29,0">
+                    <TextBlock Text="ImageOptimWin" FontSize="19" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="VersionText" Margin="0,12,0,0" FontSize="13"
+                               Foreground="{DynamicResource ThemeText}"/>
+                    <TextBlock Text="Windows x64 · C# WPF" Margin="0,8,0,0"
+                               Foreground="{DynamicResource ThemeSecondaryText}"/>
+                    <TextBlock Text="非官方 Windows 图片优化工具。更新由 GitHub Releases 提供，安装前验证数字签名和文件校验值。"
+                               TextWrapping="Wrap" Margin="0,20,0,0"
+                               Foreground="{DynamicResource ThemeSecondaryText}"/>
+                    <TextBlock Text="项目地址：github.com/ZntxCYL/ImageOptimWin"
+                               Margin="0,14,0,0" Foreground="{DynamicResource ThemeSecondaryText}"/>
+                </StackPanel>
+            </TabItem>
         </TabControl>
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
             <Button Content="取消" Width="90" Height="29" Margin="0,0,9,0"

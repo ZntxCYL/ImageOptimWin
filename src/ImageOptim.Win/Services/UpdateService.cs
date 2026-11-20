@@ -28,8 +28,8 @@ public sealed class UpdateService : IDisposable
     {
         _configuration = config;
         _http.Timeout = TimeSpan.FromMinutes(30);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/0.9.3");
-        _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/" +
+            (typeof(UpdateService).Assembly.GetName().Version?.ToString(3) ?? "unknown"));
     }
 
     public static UpdateService? CreateIfConfigured()
@@ -47,44 +47,42 @@ public sealed class UpdateService : IDisposable
 
     public async Task<AvailableUpdate?> CheckAsync(CancellationToken token = default)
     {
-        string endpoint = $"https://api.github.com/repos/{_configuration.Repository}/releases/latest";
+        // A quick check must not hang the app when a VPN/route is broken.
+        // The large ZIP download uses the separate 30-minute HTTP timeout.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        var checkToken = timeout.Token;
+        // Use GitHub's public latest-release redirect, not the unauthenticated REST API:
+        // shared VPN exit IPs can exhaust the REST API quota. The web response body
+        // is NEVER trusted; the signed manifest and pinned public key remain required.
+        string endpoint = $"https://github.com/{_configuration.Repository}/releases/latest";
         NoStableReleaseFound = false;
-        using var response = await _http.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, token);
+        using var response = await _http.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, checkToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            // releases/latest excludes pre-releases. A 404 here does NOT mean
-            // the repository is missing; check the public repository separately.
-            using var repoResponse = await _http.GetAsync(
-                $"https://api.github.com/repos/{_configuration.Repository}",
-                HttpCompletionOption.ResponseHeadersRead, token);
-            if (repoResponse.StatusCode == HttpStatusCode.NotFound)
-                throw new InvalidOperationException("GitHub 更新仓库不存在，或无法公开访问。");
-            repoResponse.EnsureSuccessStatusCode();
             NoStableReleaseFound = true;
             return null;
         }
-        response.EnsureSuccessStatusCode();
-        byte[] releaseData = await ReadLimitedAsync(response, 1024 * 1024, token);
-        using var releaseJson = JsonDocument.Parse(releaseData);
-        var release = releaseJson.RootElement;
-        string tag = release.GetProperty("tag_name").GetString() ?? "";
+        EnsureGitHubResponseOk(response, "检查最新版本");
+        Uri finalUri = response.RequestMessage?.RequestUri
+            ?? throw new InvalidDataException("无法获取 GitHub 最新版本的跳转地址。");
+        string prefix = $"/{_configuration.Repository}/releases/tag/";
+        if (finalUri.Scheme != Uri.UriSchemeHttps ||
+            !finalUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+            !finalUri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("GitHub 未返回预期的正式版本地址。");
+        string tag = finalUri.AbsolutePath[prefix.Length..];
         if (!Regex.IsMatch(tag, @"^v[0-9]+\.[0-9]+\.[0-9]+$"))
-            throw new InvalidDataException("发布标签必须是 vMAJOR.MINOR.PATCH 格式。");
+            throw new InvalidDataException("最新版本标签格式无效。");
         if (!Version.TryParse(tag[1..], out var latest))
             throw new InvalidDataException("无法解析 Release 版本。");
         var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 9, 0);
         if (latest <= current) return null;
 
-        var assetNames = release.GetProperty("assets").EnumerateArray()
-            .Select(x => x.GetProperty("name").GetString()).ToHashSet(StringComparer.Ordinal);
-        foreach (var required in new[] { ManifestName, SignatureName, ArchiveName })
-            if (!assetNames.Contains(required))
-                throw new InvalidDataException($"Release 缺少附件：{required}");
-
         // Construct URLs from the trusted configured repository and validated tag/name.
         string baseUrl = $"https://github.com/{_configuration.Repository}/releases/download/{tag}/";
-        byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, token);
-        byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, token);
+        byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, checkToken);
+        byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, checkToken);
         using var rsa = RSA.Create();
         rsa.ImportFromPem(_configuration.PublicKeyPem);
         if (!rsa.VerifyData(manifestBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
@@ -113,7 +111,7 @@ public sealed class UpdateService : IDisposable
         try
         {
             using var response = await _http.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, token);
-            response.EnsureSuccessStatusCode();
+            EnsureGitHubResponseOk(response, "下载更新包");
             if (response.Content.Headers.ContentLength is long announced && announced != update.Size)
                 throw new InvalidDataException("下载文件大小与签名清单不一致。");
             await using var input = await response.Content.ReadAsStreamAsync(token);
@@ -185,8 +183,18 @@ public sealed class UpdateService : IDisposable
     private async Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken token)
     {
         using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-        response.EnsureSuccessStatusCode();
+        EnsureGitHubResponseOk(response, "下载更新签名文件");
         return await ReadLimitedAsync(response, maxBytes, token);
+    }
+
+    private static void EnsureGitHubResponseOk(HttpResponseMessage response, string operation)
+    {
+        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
+            throw new InvalidOperationException($"{operation}遭 GitHub 拒绝（HTTP {(int)response.StatusCode}）。" +
+                "可能是 VPN 出口受到限流，请切换 VPN 节点或稍后重试；无需关闭 VPN。");
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new InvalidDataException($"{operation}失败：GitHub 发布附件不存在（HTTP 404）。");
+        response.EnsureSuccessStatusCode();
     }
 
     private static async Task<byte[]> ReadLimitedAsync(HttpResponseMessage response, int maxBytes, CancellationToken token)
