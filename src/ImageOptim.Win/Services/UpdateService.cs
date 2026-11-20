@@ -79,14 +79,15 @@ public sealed class UpdateService : IDisposable
 
         var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, JsonOptions)
             ?? throw new InvalidDataException("更新清单内容为空。");
+        string sha256 = manifest.Sha256 ?? "";
         if (manifest.Repository != _configuration.Repository || manifest.Tag != tag ||
             manifest.Version != tag[1..] || manifest.Archive != ArchiveName ||
             manifest.Size <= 0 || manifest.Size > 2_000_000_000L ||
-            !Regex.IsMatch(manifest.Sha256 ?? "", "^[a-fA-F0-9]{64}$"))
+            !Regex.IsMatch(sha256, "^[a-fA-F0-9]{64}$"))
             throw new InvalidDataException("签名清单与仓库、版本或发布包不匹配。");
 
         return new AvailableUpdate(latest, tag, baseUrl + ArchiveName,
-            manifest.Sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository);
+            sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository);
     }
 
     public async Task<string> DownloadAsync(AvailableUpdate update, IProgress<int> progress, CancellationToken token)
@@ -153,7 +154,7 @@ public sealed class UpdateService : IDisposable
             "--parent-pid", Environment.ProcessId.ToString(), "--health-token", token,
             "--version", update.Version.ToString(3)
         }) start.ArgumentList.Add(arg);
-        Process.Start(start) ?? throw new InvalidOperationException("无法启动独立更新器。");
+        _ = Process.Start(start) ?? throw new InvalidOperationException("无法启动独立更新器。");
     }
 
     public static void ConfirmHealthyStartup(string[] args)

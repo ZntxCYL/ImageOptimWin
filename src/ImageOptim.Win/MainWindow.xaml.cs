@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         if (health >= 0)
             args.RemoveRange(health, Math.Min(2, args.Count - health));
         args = args.Where(x => !x.StartsWith("-")).ToList();
-        if (args.Length != 0) AddPaths(args);
+        if (args.Count != 0) AddPaths(args);
         // Signal only after the main window has successfully loaded, so the
         // detached updater can roll back a version that fails to start.
         try { UpdateService.ConfirmHealthyStartup(Environment.GetCommandLineArgs()); }
@@ -242,7 +242,7 @@ public partial class MainWindow : Window
             if (_closingAfterStop)
             {
                 _closingAfterStop = false;
-                Dispatcher.BeginInvoke(new Action(Close));
+                _ = Dispatcher.BeginInvoke(new Action(Close));
             }
             else if (!cancelled && _jobs.Any(x => x.State == JobState.Queued)) _ = RunQueueAsync();
             else if (_checkAfterQueue)
