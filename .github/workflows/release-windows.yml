@@ -157,5 +157,5 @@ jobs:
             dist/release-assets/update-manifest.sig \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ImageOptimWin $GITHUB_REF_NAME" \
-            --notes "ImageOptimWin Windows x64 offline release with RSA-signed update manifest. The UI selection and progress icon presentation have been improved. Update installation and rollback have not been fully validated across all Windows setups; back up original images." \
+            --notes "ImageOptimWin Windows x64 offline release with RSA-signed update manifest. v0.9.3 adds a contextual Clear Records button after compression, which removes list entries only and never deletes original image files. Update installation and rollback have not been fully validated across all Windows setups; back up original images." \
             --latest

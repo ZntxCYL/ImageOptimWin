@@ -63,6 +63,19 @@ try:
             errors.append(f'File drag event missing: {event}')
     if 'existing.ResetForRetry();' not in code:
         errors.append('Previously imported paths are not requeued')
+    # v0.9.3: clear history only after all work settles, never delete image files.
+    if 'x:Name="ClearRecordsButton"' not in xaml or \
+            'Click="ClearRecords_Click"' not in xaml or \
+            'Visibility="Collapsed"' not in xaml:
+        errors.append('Clear-records button must exist and be hidden before processing')
+    if not all(piece in code for piece in (
+        'private void ClearRecords_Click(', '_jobs.Count > 0',
+        '_jobs.All(job => job.State is not (JobState.Queued or JobState.Running))',
+        '_jobs.Clear();', '_knownPaths.Clear();', 'JobsGrid.SelectedItems.Clear();')):
+        errors.append('Clear-records state, UI and re-import guards missing')
+    clear_method = code.split('private void ClearRecords_Click(', 1)[-1].split('private void Stop_Click(', 1)[0]
+    if '_isRunning' not in clear_method or 'File.Delete(' in clear_method or 'Directory.Delete(' in clear_method:
+        errors.append('Clear-records must refuse active compression and never delete files')
     if xaml.count('JobPrimaryText') < 4 or 'JobSecondaryText' not in xaml:
         errors.append('Selection-aware text styles missing')
     if 'RotatingProgressIcon' in xaml or 'RepeatBehavior="Forever"' in xaml:

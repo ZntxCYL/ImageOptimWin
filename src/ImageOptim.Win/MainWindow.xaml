@@ -226,6 +226,10 @@
                                Text="拖放图像文件到上方区域" Foreground="{DynamicResource ThemeSecondaryText}" FontSize="11"
                                TextTrimming="CharacterEllipsis"/>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="ClearRecordsButton" Width="52" Height="26" Margin="0,0,6,0"
+                                Style="{StaticResource FooterButton}" Padding="6,3" Content="清除"
+                                ToolTip="清除列表记录，不会删除图片文件" Click="ClearRecords_Click"
+                                Visibility="Collapsed"/>
                         <Button x:Name="StopButton" Width="27" Height="26" Margin="0,0,6,0"
                                 Style="{StaticResource FooterButton}" Padding="0" Content="■"
                                 Click="Stop_Click" ToolTip="停止压缩" IsEnabled="False"/>

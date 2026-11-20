@@ -28,7 +28,7 @@ public sealed class UpdateService : IDisposable
     {
         _configuration = config;
         _http.Timeout = TimeSpan.FromMinutes(30);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/0.9.2");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/0.9.3");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 

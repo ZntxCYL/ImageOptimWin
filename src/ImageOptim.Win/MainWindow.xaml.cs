@@ -255,6 +255,10 @@ public partial class MainWindow : Window
 
     private void UpdateSummary()
     {
+        // Only show clear history after all jobs have settled.
+        ClearRecordsButton.Visibility = !_isRunning && _jobs.Count > 0 &&
+            _jobs.All(job => job.State is not (JobState.Queued or JobState.Running))
+            ? Visibility.Visible : Visibility.Collapsed;
         if (_jobs.Count == 0)
         {
             SummaryText.Text = "拖放图像文件到上方区域";
@@ -283,6 +287,16 @@ public partial class MainWindow : Window
         SummaryText.Text = $"共节省 {SizeFormatter.Human(saved)} / {SizeFormatter.Human(original)} · " +
             $"平均 {average:0.0}% · 最高 {largest:0.0}%" +
             (failed > 0 ? $" · {failed} 项失败" : "");
+    }
+
+    private void ClearRecords_Click(object sender, RoutedEventArgs e)
+    {
+        // Clear in-memory history only; never delete image files or session backups.
+        if (_isRunning || _jobs.Any(job => job.State is JobState.Queued or JobState.Running)) return;
+        JobsGrid.SelectedItems.Clear();
+        _jobs.Clear();
+        _knownPaths.Clear(); // Allow previously imported images to be dropped again.
+        UpdateSummary();
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e) => _runCts?.Cancel();
