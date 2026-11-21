@@ -160,5 +160,5 @@ jobs:
             dist/release-assets/update-manifest.sig \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ImageOptimWin $GITHUB_REF_NAME" \
-            --notes "ImageOptimWin Windows x64 offline release with RSA-signed update manifest. Since v0.9.5 the client can fail over between official GitHub Releases and the CNB download mirror while preserving RSA/SHA-256 verification. CNB mirrors may lag behind GitHub; Windows GUI installation and rollback still require real-machine testing. Back up original images." \
+            --notes "ImageOptimWin Windows x64 offline release with RSA-signed update manifest. v0.9.6 checks signed GitHub and CNB releases concurrently for faster results without VPN, retaining RSA-SHA256 verification and download failover. CNB mirrors may lag behind GitHub; Windows GUI installation and rollback still require real-machine testing. Back up original images." \
             --latest

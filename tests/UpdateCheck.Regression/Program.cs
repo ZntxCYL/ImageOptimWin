@@ -39,9 +39,9 @@ internal static class Program
         var watch = Stopwatch.StartNew();
         var update = await service.CheckAsync();
         watch.Stop();
-        Assert(update?.Version.ToString(3) == "0.9.6", "CNB did not detect a newer signed release");
-        Assert(update.DownloadUrl.StartsWith("https://cnb.cool/", StringComparison.Ordinal), "CNB must be the fast primary source");
-        Assert(update.FallbackDownloadUrl?.StartsWith("https://github.com/", StringComparison.Ordinal) == true,
+        Assert(update is not null && update.Version.ToString(3) == "0.9.6", "CNB did not detect a newer signed release");
+        Assert(update!.DownloadUrl.StartsWith("https://cnb.cool/", StringComparison.Ordinal), "CNB must be the fast primary source");
+        Assert(update!.FallbackDownloadUrl?.StartsWith("https://github.com/", StringComparison.Ordinal) == true,
             "GitHub should remain the fallback archive source");
         Assert(watch.Elapsed < TimeSpan.FromSeconds(3), "Blocked GitHub delayed a valid CNB result");
         Console.WriteLine("CNB first / blocked GitHub: " + watch.ElapsedMilliseconds + "ms");
@@ -58,8 +58,8 @@ internal static class Program
         };
         using var service = CreateService(rsa, handler);
         var update = await service.CheckAsync();
-        Assert(update?.Version.ToString(3) == "0.9.7", "Fast GitHub latest tag was ignored");
-        Assert(update.DownloadUrl.StartsWith("https://github.com/", StringComparison.Ordinal), "GitHub should win for newer tags");
+        Assert(update is not null && update.Version.ToString(3) == "0.9.7", "Fast GitHub latest tag was ignored");
+        Assert(update!.DownloadUrl.StartsWith("https://github.com/", StringComparison.Ordinal), "GitHub should win for newer tags");
         Console.WriteLine("Fast GitHub newer than CNB: PASS");
     }
 
