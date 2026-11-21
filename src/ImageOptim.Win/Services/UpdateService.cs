@@ -24,14 +24,15 @@ public sealed class UpdateService : IDisposable
     private const string MirrorRepository = "ZntxCYL/ImageOptimWin";
     private const string MirrorHost = "cnb.cool";
 
-    private readonly HttpClient _http = new(new HttpClientHandler { AllowAutoRedirect = true });
+    private readonly HttpClient _http;
     private readonly UpdateConfiguration _configuration;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     public bool NoStableReleaseFound { get; private set; }
 
-    private UpdateService(UpdateConfiguration config)
+    internal UpdateService(UpdateConfiguration config, HttpMessageHandler? handler = null)
     {
         _configuration = config;
+        _http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = true });
         _http.Timeout = TimeSpan.FromMinutes(30);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("ImageOptimWin-Updater/" +
             (typeof(UpdateService).Assembly.GetName().Version?.ToString(3) ?? "unknown"));
@@ -52,77 +53,119 @@ public sealed class UpdateService : IDisposable
 
     private enum ReleaseSource { GitHub, Cnb }
 
+    private sealed record SourceCheckResult(
+        ReleaseSource Source, Version? AdvertisedVersion, AvailableUpdate? Update,
+        bool HasStableRelease, Exception? NetworkError = null);
+
     public async Task<AvailableUpdate?> CheckAsync(CancellationToken token = default)
     {
         NoStableReleaseFound = false;
         var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 9, 0);
-        Version? highestAdvertised = null;
-        Exception? lastNetworkError = null;
-        bool sawRelease = false;
-        foreach (ReleaseSource source in Sources())
-        {
-            token.ThrowIfCancellationRequested();
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-            // Do not make startup wait for a blocked GitHub address before
-            // attempting the domestic mirror. Large ZIP transfers have separate limits.
-            timeout.CancelAfter(source == ReleaseSource.GitHub
-                ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(12));
-            try
-            {
-                var tag = await ResolveLatestTagAsync(source, timeout.Token);
-                if (tag is null) continue;
-                sawRelease = true;
-                if (!Version.TryParse(tag[1..], out var latest))
-                    throw new InvalidDataException("无法解析 Release 版本。");
-                if (latest <= current)
-                {
-                    // GitHub may already have a newer version not mirrored yet.
-                    if (highestAdvertised is not null && highestAdvertised > current) continue;
-                    return null;
-                }
-                if (highestAdvertised is not null && latest < highestAdvertised) continue;
-                highestAdvertised = latest;
-                string baseUrl = DownloadBase(source, tag);
-                byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, timeout.Token);
-                byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, timeout.Token);
-                using var rsa = RSA.Create();
-                rsa.ImportFromPem(_configuration.PublicKeyPem);
-                if (!rsa.VerifyData(manifestBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
-                    throw new CryptographicException("发布清单数字签名验证失败，更新已阻止。");
-                var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, JsonOptions)
-                    ?? throw new InvalidDataException("更新清单内容为空。");
-                string sha256 = manifest.Sha256 ?? "";
-                if (manifest.Repository != _configuration.Repository || manifest.Tag != tag ||
-                    manifest.Version != tag[1..] || manifest.Archive != ArchiveName ||
-                    manifest.Size <= 0 || manifest.Size > 2_000_000_000L ||
-                    !Regex.IsMatch(sha256, "^[a-fA-F0-9]{64}$"))
-                    throw new InvalidDataException("签名清单与仓库、版本或发布包不匹配。");
 
-                ReleaseSource alternate = source == ReleaseSource.GitHub ? ReleaseSource.Cnb : ReleaseSource.GitHub;
-                string? fallbackUrl = CanUseMirror() ? DownloadBase(alternate, tag) + ArchiveName : null;
-                return new AvailableUpdate(latest, tag, baseUrl + ArchiveName,
-                    sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository, fallbackUrl);
-            }
-            catch (Exception ex) when (IsNetworkFailure(ex, token))
+        // Race both independent, RSA-verified release checks instead of making
+        // domestic users wait for the unreachable GitHub host to time out.
+        // GitHub wins if it completes first, or within a short grace period
+        // after a verified CNB result (so a newer GitHub tag is not missed).
+        using var work = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var checks = new List<Task<SourceCheckResult>>
+        {
+            CheckSourceAsync(ReleaseSource.GitHub, current, token, work.Token)
+        };
+        if (CanUseMirror())
+            checks.Add(CheckSourceAsync(ReleaseSource.Cnb, current, token, work.Token));
+
+        var pending = new List<Task<SourceCheckResult>>(checks);
+        Exception? lastNetworkError = null;
+        try
+        {
+            while (pending.Count > 0)
             {
-                lastNetworkError = ex;
-                // Only transport failure may switch mirrors. A bad signature,
-                // malformed signed manifest, or wrong hash must fail closed.
+                token.ThrowIfCancellationRequested();
+                var completed = await Task.WhenAny(pending);
+                pending.Remove(completed);
+                var result = await completed; // Invalid signature/manifest: fail closed.
+
+                if (result.NetworkError is not null)
+                {
+                    lastNetworkError = result.NetworkError;
+                    continue;
+                }
+
+                // If CNB responds first, allow a quick GitHub response to
+                // override with a newer version. Never wait for its full timeout.
+                if (result.Source == ReleaseSource.Cnb && pending.Count > 0)
+                {
+                    var github = pending[0];
+                    var grace = Task.Delay(TimeSpan.FromMilliseconds(350), token);
+                    if (await Task.WhenAny(github, grace) == github)
+                    {
+                        pending.Remove(github);
+                        var githubResult = await github;
+                        if (githubResult.NetworkError is null &&
+                            (githubResult.Update?.Version ?? current) >
+                            (result.Update?.Version ?? current))
+                            result = githubResult;
+                    }
+                }
+
+                NoStableReleaseFound = !result.HasStableRelease;
+                return result.Update;
             }
-        }
-        if (highestAdvertised is not null && highestAdvertised > current)
-            throw new IOException("发现新版本，但 GitHub 和 CNB 镜像的签名文件暂时不可用。请稍后重试。", lastNetworkError);
-        if (sawRelease) return null;
-        if (lastNetworkError is not null)
+
             throw new IOException("GitHub 和 CNB 镜像均无法检查更新，请稍后重试。", lastNetworkError);
-        NoStableReleaseFound = true;
-        return null;
+        }
+        finally
+        {
+            work.Cancel(); // Cancel the losing request before disposing HttpClient.
+            try { await Task.WhenAll(checks); }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
+            catch (Exception) when (!token.IsCancellationRequested) { }
+        }
     }
 
-    private IEnumerable<ReleaseSource> Sources()
+    private async Task<SourceCheckResult> CheckSourceAsync(
+        ReleaseSource source, Version current, CancellationToken userToken, CancellationToken workToken)
     {
-        yield return ReleaseSource.GitHub;
-        if (CanUseMirror()) yield return ReleaseSource.Cnb;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(workToken);
+        timeout.CancelAfter(source == ReleaseSource.GitHub
+            ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(10));
+        try
+        {
+            string? tag = await ResolveLatestTagAsync(source, timeout.Token);
+            if (tag is null)
+                return new SourceCheckResult(source, null, null, HasStableRelease: false);
+            if (!Version.TryParse(tag[1..], out var latest))
+                throw new InvalidDataException("无法解析 Release 版本。");
+            if (latest <= current)
+                return new SourceCheckResult(source, latest, null, HasStableRelease: true);
+
+            string baseUrl = DownloadBase(source, tag);
+            byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, timeout.Token);
+            byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, timeout.Token);
+            using var rsa = RSA.Create();
+            rsa.ImportFromPem(_configuration.PublicKeyPem);
+            if (!rsa.VerifyData(manifestBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+                throw new CryptographicException("发布清单数字签名验证失败，更新已阻止。");
+
+            var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, JsonOptions)
+                ?? throw new InvalidDataException("更新清单内容为空。");
+            string sha256 = manifest.Sha256 ?? "";
+            if (manifest.Repository != _configuration.Repository || manifest.Tag != tag ||
+                manifest.Version != tag[1..] || manifest.Archive != ArchiveName ||
+                manifest.Size <= 0 || manifest.Size > 2_000_000_000L ||
+                !Regex.IsMatch(sha256, "^[a-fA-F0-9]{64}$"))
+                throw new InvalidDataException("签名清单与仓库、版本或发布包不匹配。");
+
+            ReleaseSource alternate = source == ReleaseSource.GitHub ? ReleaseSource.Cnb : ReleaseSource.GitHub;
+            string? fallbackUrl = CanUseMirror() ? DownloadBase(alternate, tag) + ArchiveName : null;
+            var update = new AvailableUpdate(latest, tag, baseUrl + ArchiveName,
+                sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository, fallbackUrl);
+            return new SourceCheckResult(source, latest, update, HasStableRelease: true);
+        }
+        catch (Exception ex) when (IsNetworkFailure(ex, userToken))
+        {
+            return new SourceCheckResult(source, null, null, HasStableRelease: false, ex);
+        }
     }
 
     private bool CanUseMirror() =>

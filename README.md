@@ -2,7 +2,7 @@
 
 基于 **C# / WPF / .NET 10** 的非官方 Windows 图片优化工具，交互风格参考 [macOS ImageOptim](https://github.com/ImageOptim/ImageOptim)。支持中文界面、深浅色自动切换、拖入文件与文件夹、逐文件压缩状态和进度、结果统计、重复导入及会话内恢复。
 
-**项目状态：v0.9.5 正式版源码（更新器回滚仍需实机补充验证）。** 已集成自动打包和 GitHub Releases 更新逻辑，但完整 Windows GUI、安装、更新与回滚仍需实机测试。仓库源码 **不是** 已通过验收的 Windows 正式版本。该项目不是 ImageOptim 官方移植版。
+**项目状态：v0.9.6 正式版源码（更新器回滚仍需实机补充验证）。** 已集成自动打包和 GitHub Releases 更新逻辑，但完整 Windows GUI、安装、更新与回滚仍需实机测试。仓库源码 **不是** 已通过验收的 Windows 正式版本。该项目不是 ImageOptim 官方移植版。
 
 ## 功能与压缩引擎
 

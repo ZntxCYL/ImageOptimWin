@@ -48,6 +48,16 @@ check('src/ImageOptim.Win/Services/UpdateService.cs', [
     '/-/releases/download/{tag}/', 'FallbackDownloadUrl',
     'IsNetworkFailure', 'InvalidDataException', 'RSASignaturePadding.Pkcs1',
     'CryptographicException', 'hash.GetHashAndReset()'])
+check('src/ImageOptim.Win/Services/UpdateService.cs', [
+    'Task.WhenAny(pending)', 'Task.WhenAny(github, grace)',
+    'CheckSourceAsync(ReleaseSource.GitHub', 'CheckSourceAsync(ReleaseSource.Cnb',
+    'work.Cancel();', 'TimeSpan.FromMilliseconds(350)'])
+check('tests/UpdateCheck.Regression/Program.cs', [
+    'TestCnbAnswersWithoutWaitingForBlockedGitHub',
+    'TestFastGitHubCanOverrideAnOlderMirror', 'TestHttp403FallsBack',
+    'TestAlreadyCurrentAnswersQuickly', 'TestInvalidMirrorSignatureFailsClosed'])
+check('tests/UpdateCheck.Regression/UpdateCheck.Regression.csproj', [
+    'net10.0', 'Services/UpdateService.cs'])
 check('src/ImageOptim.Win/UpdateWindow.xaml.cs', ['DownloadAsync', 'StartUpdater', 'Cancel_Click'])
 check('src/ImageOptim.Updater/Program.cs', ['WaitForExitAsync', 'Directory.Move(install, backup)',
     'Directory.Move(stage, install)', 'Directory.Move(backup, install)', 'health-',

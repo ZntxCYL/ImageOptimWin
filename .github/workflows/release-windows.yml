@@ -47,6 +47,9 @@ jobs:
       - name: Compile application and updater
         shell: pwsh
         run: dotnet build ./ImageOptim.Win.sln -c Release --nologo
+      - name: Test fast dual-source update checks and signature rejection
+        shell: pwsh
+        run: dotnet run --project ./tests/UpdateCheck.Regression/UpdateCheck.Regression.csproj -c Release --nologo
       - name: Package full offline Windows release
         shell: pwsh
         run: ./publish.ps1 -Runtime win-x64
