@@ -8,8 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ImageOptim.Win</AssemblyName>
     <RootNamespace>ImageOptim.Win</RootNamespace>
-    <Version>0.9.4</Version>
-    <FileVersion>0.9.4.0</FileVersion>
+    <Version>0.9.5</Version>
+    <FileVersion>0.9.5.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />

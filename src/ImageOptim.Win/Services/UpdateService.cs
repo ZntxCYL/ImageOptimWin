@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 namespace ImageOptim.Win.Services;
 
 /// <summary>
-/// Reads a public GitHub Release and verifies its detached, RSA-SHA256-signed manifest.
+/// Checks GitHub Releases with a CNB mirror fallback, verifying the same RSA-SHA256 manifest.
 /// The publisher's public key is distributed with the installed application.
 /// An unsigned or malformed release can never be installed.
 /// </summary>
@@ -19,6 +19,11 @@ public sealed class UpdateService : IDisposable
     internal const string ArchiveName = "ImageOptimWin-win-x64-Bundled.zip";
     internal const string ManifestName = "update-manifest.json";
     internal const string SignatureName = "update-manifest.sig";
+    // Only the owner's public CNB mirror is trusted as a transport alternative.
+    // Both sites must present the SAME canonical GitHub-signed update manifest.
+    private const string MirrorRepository = "ZntxCYL/ImageOptimWin";
+    private const string MirrorHost = "cnb.cool";
+
     private readonly HttpClient _http = new(new HttpClientHandler { AllowAutoRedirect = true });
     private readonly UpdateConfiguration _configuration;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -45,61 +50,118 @@ public sealed class UpdateService : IDisposable
         return new UpdateService(config);
     }
 
+    private enum ReleaseSource { GitHub, Cnb }
+
     public async Task<AvailableUpdate?> CheckAsync(CancellationToken token = default)
     {
-        // A quick check must not hang the app when a VPN/route is broken.
-        // The large ZIP download uses the separate 30-minute HTTP timeout.
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        var checkToken = timeout.Token;
-        // Use GitHub's public latest-release redirect, not the unauthenticated REST API:
-        // shared VPN exit IPs can exhaust the REST API quota. The web response body
-        // is NEVER trusted; the signed manifest and pinned public key remain required.
-        string endpoint = $"https://github.com/{_configuration.Repository}/releases/latest";
         NoStableReleaseFound = false;
-        using var response = await _http.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, checkToken);
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 9, 0);
+        Version? highestAdvertised = null;
+        Exception? lastNetworkError = null;
+        bool sawRelease = false;
+        foreach (ReleaseSource source in Sources())
         {
-            NoStableReleaseFound = true;
-            return null;
+            token.ThrowIfCancellationRequested();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            // Do not make startup wait for a blocked GitHub address before
+            // attempting the domestic mirror. Large ZIP transfers have separate limits.
+            timeout.CancelAfter(source == ReleaseSource.GitHub
+                ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(12));
+            try
+            {
+                var tag = await ResolveLatestTagAsync(source, timeout.Token);
+                if (tag is null) continue;
+                sawRelease = true;
+                if (!Version.TryParse(tag[1..], out var latest))
+                    throw new InvalidDataException("无法解析 Release 版本。");
+                if (latest <= current)
+                {
+                    // GitHub may already have a newer version not mirrored yet.
+                    if (highestAdvertised is not null && highestAdvertised > current) continue;
+                    return null;
+                }
+                if (highestAdvertised is not null && latest < highestAdvertised) continue;
+                highestAdvertised = latest;
+                string baseUrl = DownloadBase(source, tag);
+                byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, timeout.Token);
+                byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, timeout.Token);
+                using var rsa = RSA.Create();
+                rsa.ImportFromPem(_configuration.PublicKeyPem);
+                if (!rsa.VerifyData(manifestBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+                    throw new CryptographicException("发布清单数字签名验证失败，更新已阻止。");
+                var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, JsonOptions)
+                    ?? throw new InvalidDataException("更新清单内容为空。");
+                string sha256 = manifest.Sha256 ?? "";
+                if (manifest.Repository != _configuration.Repository || manifest.Tag != tag ||
+                    manifest.Version != tag[1..] || manifest.Archive != ArchiveName ||
+                    manifest.Size <= 0 || manifest.Size > 2_000_000_000L ||
+                    !Regex.IsMatch(sha256, "^[a-fA-F0-9]{64}$"))
+                    throw new InvalidDataException("签名清单与仓库、版本或发布包不匹配。");
+
+                ReleaseSource alternate = source == ReleaseSource.GitHub ? ReleaseSource.Cnb : ReleaseSource.GitHub;
+                string? fallbackUrl = CanUseMirror() ? DownloadBase(alternate, tag) + ArchiveName : null;
+                return new AvailableUpdate(latest, tag, baseUrl + ArchiveName,
+                    sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository, fallbackUrl);
+            }
+            catch (Exception ex) when (IsNetworkFailure(ex, token))
+            {
+                lastNetworkError = ex;
+                // Only transport failure may switch mirrors. A bad signature,
+                // malformed signed manifest, or wrong hash must fail closed.
+            }
         }
+        if (highestAdvertised is not null && highestAdvertised > current)
+            throw new IOException("发现新版本，但 GitHub 和 CNB 镜像的签名文件暂时不可用。请稍后重试。", lastNetworkError);
+        if (sawRelease) return null;
+        if (lastNetworkError is not null)
+            throw new IOException("GitHub 和 CNB 镜像均无法检查更新，请稍后重试。", lastNetworkError);
+        NoStableReleaseFound = true;
+        return null;
+    }
+
+    private IEnumerable<ReleaseSource> Sources()
+    {
+        yield return ReleaseSource.GitHub;
+        if (CanUseMirror()) yield return ReleaseSource.Cnb;
+    }
+
+    private bool CanUseMirror() =>
+        string.Equals(_configuration.Repository, MirrorRepository, StringComparison.Ordinal);
+
+    private string DownloadBase(ReleaseSource source, string tag) =>
+        source == ReleaseSource.GitHub
+            ? $"https://github.com/{_configuration.Repository}/releases/download/{tag}/"
+            : $"https://{MirrorHost}/{MirrorRepository}/-/releases/download/{tag}/";
+
+    private async Task<string?> ResolveLatestTagAsync(ReleaseSource source, CancellationToken token)
+    {
+        string endpoint = source == ReleaseSource.GitHub
+            ? $"https://github.com/{_configuration.Repository}/releases/latest"
+            : $"https://{MirrorHost}/{MirrorRepository}/-/badge/release.link";
+        using var response = await _http.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, token);
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
         EnsureGitHubResponseOk(response, "检查最新版本");
         Uri finalUri = response.RequestMessage?.RequestUri
-            ?? throw new InvalidDataException("无法获取 GitHub 最新版本的跳转地址。");
-        string prefix = $"/{_configuration.Repository}/releases/tag/";
+            ?? throw new InvalidDataException("无法获取最新版本跳转地址。");
+        string expectedHost = source == ReleaseSource.GitHub ? "github.com" : MirrorHost;
+        string prefix = source == ReleaseSource.GitHub
+            ? $"/{_configuration.Repository}/releases/tag/"
+            : $"/{MirrorRepository}/-/releases/tag/";
         if (finalUri.Scheme != Uri.UriSchemeHttps ||
-            !finalUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+            !finalUri.Host.Equals(expectedHost, StringComparison.OrdinalIgnoreCase) ||
             !finalUri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("GitHub 未返回预期的正式版本地址。");
+            throw new InvalidDataException("更新源未返回预期的正式版本地址。");
         string tag = finalUri.AbsolutePath[prefix.Length..];
         if (!Regex.IsMatch(tag, @"^v[0-9]+\.[0-9]+\.[0-9]+$"))
             throw new InvalidDataException("最新版本标签格式无效。");
-        if (!Version.TryParse(tag[1..], out var latest))
-            throw new InvalidDataException("无法解析 Release 版本。");
-        var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 9, 0);
-        if (latest <= current) return null;
-
-        // Construct URLs from the trusted configured repository and validated tag/name.
-        string baseUrl = $"https://github.com/{_configuration.Repository}/releases/download/{tag}/";
-        byte[] manifestBytes = await DownloadSmallAsync(baseUrl + ManifestName, 64 * 1024, checkToken);
-        byte[] signatureBytes = await DownloadSmallAsync(baseUrl + SignatureName, 8 * 1024, checkToken);
-        using var rsa = RSA.Create();
-        rsa.ImportFromPem(_configuration.PublicKeyPem);
-        if (!rsa.VerifyData(manifestBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
-            throw new CryptographicException("发布清单数字签名验证失败，更新已阻止。");
-
-        var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, JsonOptions)
-            ?? throw new InvalidDataException("更新清单内容为空。");
-        string sha256 = manifest.Sha256 ?? "";
-        if (manifest.Repository != _configuration.Repository || manifest.Tag != tag ||
-            manifest.Version != tag[1..] || manifest.Archive != ArchiveName ||
-            manifest.Size <= 0 || manifest.Size > 2_000_000_000L ||
-            !Regex.IsMatch(sha256, "^[a-fA-F0-9]{64}$"))
-            throw new InvalidDataException("签名清单与仓库、版本或发布包不匹配。");
-
-        return new AvailableUpdate(latest, tag, baseUrl + ArchiveName,
-            sha256.ToLowerInvariant(), manifest.Size, _configuration.Repository);
+        return tag;
     }
+
+    private static bool IsNetworkFailure(Exception ex, CancellationToken userToken) =>
+        // Integrity/format failures are terminal even if a base exception is IOException.
+        ex is not InvalidDataException && (
+            ex is HttpRequestException or IOException ||
+            (ex is OperationCanceledException && !userToken.IsCancellationRequested));
 
     public async Task<string> DownloadAsync(AvailableUpdate update, IProgress<int> progress, CancellationToken token)
     {
@@ -108,40 +170,62 @@ public sealed class UpdateService : IDisposable
         Directory.CreateDirectory(folder);
         string staged = Path.Combine(folder, "update.zip.part");
         string final = Path.Combine(folder, "update.zip");
-        try
+        Exception? lastNetworkError = null;
+        var urls = new[] { update.DownloadUrl, update.FallbackDownloadUrl }
+            .Where(url => !string.IsNullOrWhiteSpace(url)).Distinct(StringComparer.Ordinal).ToArray();
+        foreach (string? url in urls)
         {
-            using var response = await _http.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, token);
-            EnsureGitHubResponseOk(response, "下载更新包");
-            if (response.Content.Headers.ContentLength is long announced && announced != update.Size)
-                throw new InvalidDataException("下载文件大小与签名清单不一致。");
-            await using var input = await response.Content.ReadAsStreamAsync(token);
-            await using (var output = new FileStream(staged, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, true))
+            token.ThrowIfCancellationRequested();
+            try
             {
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                long received = 0;
-                var block = new byte[128 * 1024];
-                int count;
-                while ((count = await input.ReadAsync(block, token)) != 0)
+                progress.Report(0);
+                using var headersTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                headersTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+                using var response = await _http.GetAsync(url,
+                    HttpCompletionOption.ResponseHeadersRead, headersTimeout.Token);
+                EnsureGitHubResponseOk(response, "下载更新包");
+                if (response.Content.Headers.ContentLength is long announced && announced != update.Size)
+                    throw new InvalidDataException("下载文件大小与签名清单不一致。");
+                await using var input = await response.Content.ReadAsStreamAsync(token);
+                await using (var output = new FileStream(staged, FileMode.Create, FileAccess.Write,
+                    FileShare.None, 128 * 1024, true))
                 {
-                    received += count;
-                    if (received > update.Size) throw new InvalidDataException("更新包超过清单声明大小。");
-                    hash.AppendData(block, 0, count);
-                    await output.WriteAsync(block.AsMemory(0, count), token);
-                    progress.Report((int)Math.Min(100, received * 100 / update.Size));
+                    using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    long received = 0;
+                    var block = new byte[128 * 1024];
+                    using var idleTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    int count;
+                    while (true)
+                    {
+                        // A hung transfer should eventually try the second mirror.
+                        idleTimeout.CancelAfter(TimeSpan.FromMinutes(2));
+                        count = await input.ReadAsync(block, idleTimeout.Token);
+                        if (count == 0) break;
+                        received += count;
+                        if (received > update.Size) throw new InvalidDataException("更新包超过清单声明大小。");
+                        hash.AppendData(block, 0, count);
+                        await output.WriteAsync(block.AsMemory(0, count), token);
+                        progress.Report((int)Math.Min(100, received * 100 / update.Size));
+                    }
+                    await output.FlushAsync(token);
+                    if (received != update.Size ||
+                        !Convert.ToHexString(hash.GetHashAndReset()).Equals(update.Sha256,
+                            StringComparison.OrdinalIgnoreCase))
+                        throw new CryptographicException("更新包 SHA-256 或文件大小校验失败，已阻止安装。");
                 }
-                await output.FlushAsync(token);
-                if (received != update.Size ||
-                    !Convert.ToHexString(hash.GetHashAndReset()).Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new CryptographicException("更新包 SHA-256 或文件大小校验失败。");
+                File.Move(staged, final, true);
+                return final;
             }
-            File.Move(staged, final, true);
-            return final;
+            catch (Exception ex) when (IsNetworkFailure(ex, token))
+            {
+                lastNetworkError = ex;
+            }
+            finally
+            {
+                try { File.Delete(staged); } catch (IOException) { }
+            }
         }
-        catch
-        {
-            try { File.Delete(staged); } catch (IOException) { }
-            throw;
-        }
+        throw new IOException("GitHub 与 CNB 更新包下载均失败，请检查网络后重试。", lastNetworkError);
     }
 
     public static void StartUpdater(string verifiedZip, AvailableUpdate update)
@@ -190,10 +274,11 @@ public sealed class UpdateService : IDisposable
     private static void EnsureGitHubResponseOk(HttpResponseMessage response, string operation)
     {
         if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
-            throw new InvalidOperationException($"{operation}遭 GitHub 拒绝（HTTP {(int)response.StatusCode}）。" +
-                "可能是 VPN 出口受到限流，请切换 VPN 节点或稍后重试；无需关闭 VPN。");
+            throw new HttpRequestException($"{operation}被服务器限流（HTTP {(int)response.StatusCode}）。",
+                null, response.StatusCode);
         if (response.StatusCode == HttpStatusCode.NotFound)
-            throw new InvalidDataException($"{operation}失败：GitHub 发布附件不存在（HTTP 404）。");
+            throw new HttpRequestException($"{operation}失败：发布附件不存在（HTTP 404）。",
+                null, response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
 
@@ -216,7 +301,7 @@ public sealed class UpdateService : IDisposable
     public void Dispose() => _http.Dispose();
 }
 
-public sealed record AvailableUpdate(Version Version, string Tag, string DownloadUrl, string Sha256, long Size, string Repository);
+public sealed record AvailableUpdate(Version Version, string Tag, string DownloadUrl, string Sha256, long Size, string Repository, string? FallbackDownloadUrl = null);
 public sealed class UpdateConfiguration
 {
     public string Repository { get; set; } = "";

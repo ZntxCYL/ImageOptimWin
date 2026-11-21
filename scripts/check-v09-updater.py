@@ -43,6 +43,11 @@ check('src/ImageOptim.Win/PreferencesWindow.xaml', [
 check('src/ImageOptim.Win/PreferencesWindow.xaml.cs', [
     'typeof(PreferencesWindow).Assembly.GetName().Version',
     'VersionText.Text = "当前版本：v"'])
+check('src/ImageOptim.Win/Services/UpdateService.cs', [
+    'MirrorRepository = "ZntxCYL/ImageOptimWin"', 'badge/release.link',
+    '/-/releases/download/{tag}/', 'FallbackDownloadUrl',
+    'IsNetworkFailure', 'InvalidDataException', 'RSASignaturePadding.Pkcs1',
+    'CryptographicException', 'hash.GetHashAndReset()'])
 check('src/ImageOptim.Win/UpdateWindow.xaml.cs', ['DownloadAsync', 'StartUpdater', 'Cancel_Click'])
 check('src/ImageOptim.Updater/Program.cs', ['WaitForExitAsync', 'Directory.Move(install, backup)',
     'Directory.Move(stage, install)', 'Directory.Move(backup, install)', 'health-',
